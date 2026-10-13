@@ -1,0 +1,7 @@
+# 内置核心的固定版本。sha256 是 GitHub 发布资产（.gz）的摘要，fetch-core.sh 下载后逐项校验。
+# 升级核心：scripts/fetch-core.sh --update-core，然后重新跑测试再提交。
+MIHOMO_VERSION=v1.19.32
+MIHOMO_ARM64_ASSET=mihomo-darwin-arm64-v1.19.32.gz
+MIHOMO_ARM64_SHA256=3312a6780652c622890fd4357c6a853bbf865464fd047ac7b7f52dab8de18652
+MIHOMO_AMD64_ASSET=mihomo-darwin-amd64-v1-v1.19.32.gz
+MIHOMO_AMD64_SHA256=f6eef841308b682e48f9c3e4740af42f5644a53d2f18c4d4bf1ee6f8a7af7c8b

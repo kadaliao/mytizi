@@ -1,0 +1,5 @@
+Vendor/
+.build/
+*.dmg
+.DS_Store
+/dist/
