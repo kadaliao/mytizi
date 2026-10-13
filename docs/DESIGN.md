@@ -149,13 +149,13 @@ core.lock           固定的 mihomo 版本与 SHA-256
 - 诊断：解析器用真实机器输出做样本；脱敏不泄漏；每条自动结论都有对应测试。
 - 打包：通用二进制（arm64+x86_64）、ad-hoc 签名通过 `codesign --verify`、清单哈希与包内文件逐一吻合、dmg 校验通过、App 能启动。
 
-**尚未在真实环境验证**（需要 root 且网络干净，见 README「联调清单」）
+**真机验证**
 
-- TUN 网卡真的创建、路由接管、`dns-hijack` 与系统 DNS=198.18.0.2 的实际表现；
-- 系统层 `networksetup -setv6off/-setv6automatic` 与真实 DNS 设置/恢复；
-- `osascript` 管理员授权弹窗与 `launchctl bootstrap` 的真实安装；
-- 睡眠唤醒、Wi-Fi/有线切换；与其他 TUN 共存（联调前必须先退出其他会开 TUN 的代理软件，否则结果没有意义）；
-- Intel 机器、另一台机器上 Gatekeeper 的「仍要打开」流程。
+维护者已在真机上试用，基本流程（添加订阅、连接、使用、断开）正常。以下场景还没有系统化的回归记录，改动相关代码后请按 [TESTING.md](TESTING.md) 手动验证：
+
+- 系统层 `networksetup -setv6off/-setv6automatic` 与 DNS 设置/恢复的边界情况（手动 IPv6、多网卡、崩溃恢复）；
+- 睡眠唤醒、Wi-Fi/有线切换；与其他 TUN 共存（必须先退出其他会开 TUN 的代理软件）；
+- Intel 机器，以及全新机器上 Gatekeeper 的「仍要打开」流程。
 
 ## 10. 后续
 

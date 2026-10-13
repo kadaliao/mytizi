@@ -80,7 +80,10 @@ final class AppModel: ObservableObject {
     private enum LogLevel { case info, error }
 
     static var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+        #if DEBUG
+        if let override = versionOverride { return override }
+        #endif
+        return Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
     }
 
     // MARK: 生命周期
@@ -541,6 +544,8 @@ final class AppModel: ObservableObject {
 
 #if DEBUG
 nonisolated(unsafe) var previewDirectories: [URL] = []
+/// 截图时显示的版本号（调试构建没有 Info.plist）。
+nonisolated(unsafe) var versionOverride: String?
 
 extension AppModel {
     /// 仅用于截图渲染：不访问磁盘上的真实设置，也不连接后台组件。

@@ -85,7 +85,9 @@ cat >"$app/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
+	<key>CFBundleDevelopmentRegion</key><string>zh-Hans</string>
+	<!-- 声明支持的语言：系统提供的控件（粘贴按钮、标准菜单等）按它决定显示中文还是英文。 -->
+	<key>CFBundleLocalizations</key><array><string>zh-Hans</string><string>en</string></array>
 	<key>CFBundleExecutable</key><string>$APP_NAME</string>
 	<key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
 	<key>CFBundleName</key><string>$APP_NAME</string>

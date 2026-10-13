@@ -7,7 +7,11 @@ import MytiziKit
 //   MyTizi --check-subscription <链接>           用和界面完全相同的代码下载并解析订阅，打印节点（不保存任何东西）
 #if DEBUG
 if let index = CommandLine.arguments.firstIndex(of: "--snapshot"), CommandLine.arguments.count > index + 1 {
-    MainActor.assumeIsolated { Snapshot.run(directory: CommandLine.arguments[index + 1]) }
+    MainActor.assumeIsolated { Snapshot.runSnapshots(directory: CommandLine.arguments[index + 1]) }
+    exit(0)
+}
+if let index = CommandLine.arguments.firstIndex(of: "--screenshot"), CommandLine.arguments.count > index + 1 {
+    MainActor.assumeIsolated { Snapshot.runScreenshot(directory: CommandLine.arguments[index + 1]) }
     exit(0)
 }
 #endif
