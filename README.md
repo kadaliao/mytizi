@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/images/icon.png" alt="MyTizi 图标" width="112"></p>
+
 <h1 align="center">MyTizi</h1>
 
 <p align="center">粘贴一个订阅链接，点一下就连上。<br>规则、DNS、IPv6、国内 CDN，都不用你管。</p>
