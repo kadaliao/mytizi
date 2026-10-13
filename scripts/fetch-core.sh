@@ -73,8 +73,26 @@ fetch_core() {
 	printf '%s' "$want" >"$stamp"
 }
 
+# 许可证文本：随 App 一起分发（GPL 要求）。哈希与 core.lock 不一致说明上游许可证变了，必须人工确认。
+fetch_license() {
+	dest="$out/mihomo-LICENSE.txt"
+	if [ -f "$dest" ] && [ "$(sha256_of "$dest")" = "$MIHOMO_LICENSE_SHA256" ]; then return; fi
+	tmp="$(mktemp "${TMPDIR:-/tmp}/mihomo-license.XXXXXX")"
+	curl -fsSL --max-time 60 -o "$tmp" "https://raw.githubusercontent.com/MetaCubeX/mihomo/$MIHOMO_VERSION/LICENSE"
+	got="$(sha256_of "$tmp")"
+	if [ "$got" != "$MIHOMO_LICENSE_SHA256" ]; then
+		rm -f "$tmp"
+		printf 'mihomo %s 的 LICENSE 与 core.lock 记录不一致（期望 %s，实际 %s）。请人工确认许可证后更新。
+' "$MIHOMO_VERSION" "$MIHOMO_LICENSE_SHA256" "$got" >&2
+		exit 1
+	fi
+	mv "$tmp" "$dest"
+	chmod 644 "$dest"
+}
+
 fetch_core arm64 "$MIHOMO_ARM64_ASSET" "$MIHOMO_ARM64_SHA256"
 fetch_core amd64 "$MIHOMO_AMD64_ASSET" "$MIHOMO_AMD64_SHA256"
+fetch_license
 
 if [ "${1:-}" = "--refresh-geo" ] || [ ! -f "$out/geoip.metadb" ] || [ ! -f "$out/geosite.dat" ]; then
 	json="$(api https://api.github.com/repos/MetaCubeX/meta-rules-dat/releases/latest)"

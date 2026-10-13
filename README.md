@@ -47,7 +47,8 @@ DMG=1 scripts/build-app.sh            # 通用二进制 + dmg
 
 设计取舍见 [docs/DESIGN.md](docs/DESIGN.md)，真机回归清单见 [docs/TESTING.md](docs/TESTING.md)。
 
-## 第三方组件
+## 许可证
 
-- [mihomo](https://github.com/MetaCubeX/mihomo)（GPL-3.0）：构建时按 `core.lock` 下载并校验，不包含在本仓库里；分发打包后的 App 需遵守它的许可证。
-- [meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat)：`geoip.metadb`、`geosite.dat`，同样在构建时下载。
+MyTizi 以 [MIT 许可证](LICENSE) 发布。
+
+打包后的 App 内置了 [mihomo](https://github.com/MetaCubeX/mihomo)（GPL-3.0）和 [meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat) 的地理数据库，它们保留各自的许可证，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)；许可证全文随 App 附带在 `Contents/Resources/licenses/`。它们在构建时下载，不包含在本仓库里。

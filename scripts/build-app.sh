@@ -78,6 +78,11 @@ cp "$products/mytizi-helper" "$app/Contents/Helpers/mytizi-helper"
 cp "$products/mihomo" "$app/Contents/Resources/core/mihomo"
 cp "$core_dir/geoip.metadb" "$core_dir/geosite.dat" "$app/Contents/Resources/core/"
 cp "$work/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
+# 许可证：MyTizi 自身（MIT）、第三方声明、随包分发的 mihomo（GPL-3.0）许可证全文。
+mkdir -p "$app/Contents/Resources/licenses"
+cp "$root/LICENSE" "$app/Contents/Resources/licenses/MyTizi-LICENSE.txt"
+cp "$root/THIRD_PARTY_NOTICES.md" "$app/Contents/Resources/licenses/THIRD_PARTY_NOTICES.md"
+cp "$core_dir/mihomo-LICENSE.txt" "$app/Contents/Resources/licenses/mihomo-LICENSE.txt"
 chmod 755 "$app/Contents/MacOS/$APP_NAME" "$app/Contents/Helpers/mytizi-helper" "$app/Contents/Resources/core/mihomo"
 
 cat >"$app/Contents/Info.plist" <<PLIST
