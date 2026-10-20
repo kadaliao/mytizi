@@ -12,7 +12,9 @@ public enum DiagnosticsReport {
         var out: [String] = []
 
         out.append("# \(AppInfo.displayName) 诊断报告")
-        out.append("生成时间 \(DiagnosticsAnalyzer.format(input.now))　|　\(AppInfo.displayName) \(input.appVersion)　|　macOS \(input.facts.macOS)（\(input.facts.arch)\(input.facts.model.isEmpty ? "" : "，\(input.facts.model)")）")
+        let arch = "\(input.facts.arch)\(input.facts.model.isEmpty ? "" : "，\(input.facts.model)")"
+        let generatedAt = "生成时间 \(DiagnosticsAnalyzer.format(input.now))　|　\(AppInfo.displayName) \(input.appVersion)"
+        out.append(generatedAt + "　|　macOS \(input.facts.macOS)（\(arch)）")
         out.append("")
         out.append(aiBriefing(includeFullLogs: includeFullLogs))
 
@@ -86,6 +88,8 @@ public enum DiagnosticsReport {
         > **常见现象 → 可能原因**
         > - 国内网站 / 微信图片 / 飞书打不开或很慢 → 命中了 `PROXY`（在日志里搜该域名），需要补直连域名；或 DNS 没被接管。
         > - 海外网站打不开 → 命中了 `DIRECT`，或所有线路延迟都失败（节点不可用 / 订阅过期）。
+        > - 日志里大量 `dial PROXY … context deadline exceeded`，而直连自检正常 → **节点服务器连不上**（不是规则问题）：先查节点地址/端口、DDNS、IPv6。
+        > - 日志里 `dial PROXY` 伴随 `tls:` / `EOF` / 认证错误 → 节点能连上但协议或密码/UUID 不对。
         > - 全部打不开 → 后台组件没运行、系统 DNS 没指向 `\(AppInfo.tunDNS)`、另一个代理/TUN 冲突、残留的 `/etc/resolver/*` 指向已关闭的本地端口。
         > - 断开后断网 → 网络恢复点没有执行：检查网络服务的 DNS 是否还是 `\(AppInfo.tunDNS)`。
         >
@@ -135,7 +139,9 @@ public enum DiagnosticsReport {
         lines.append("- 线路数：\(subscription.nodes.count)；协议分布：\(typeBreakdown(subscription.nodes))")
         lines.append("- 添加于 \(DiagnosticsAnalyzer.format(subscription.addedAt))；上次更新 \(subscription.updatedAt.map(DiagnosticsAnalyzer.format) ?? "从未")")
         if let usage = subscription.usage {
-            lines.append("- 流量：已用 \(DiagnosticsAnalyzer.bytes(usage.used)) / \(usage.total > 0 ? DiagnosticsAnalyzer.bytes(usage.total) : "不限")；到期 \(usage.expire.map(DiagnosticsAnalyzer.format) ?? "不过期")")
+            let total = usage.total > 0 ? DiagnosticsAnalyzer.bytes(usage.total) : "不限"
+            let expire = usage.expire.map(DiagnosticsAnalyzer.format) ?? "不过期"
+            lines.append("- 流量：已用 \(DiagnosticsAnalyzer.bytes(usage.used)) / \(total)；到期 \(expire)")
         }
         lines.append("")
         return lines

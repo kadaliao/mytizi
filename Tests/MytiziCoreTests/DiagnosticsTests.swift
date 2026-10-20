@@ -259,6 +259,46 @@ final class AnalyzerTests: XCTestCase {
         XCTAssertTrue(DiagnosticsAnalyzer.findings(input).map(\.title).contains("核心意外退出"))
     }
 
+    func testNodeServerUnreachableIsDistinguishedFromGenericFailure() {
+        var input = healthyInput()
+        input.nodes = [NodeDelay(name: "Mac-FRP", type: "Http", delay: nil)]
+        input.selfTest = [
+            SelfTestResult(
+                name: "国内网站", url: "https://www.baidu.com/", expected: .direct, reachable: true, status: 200,
+                milliseconds: 74, observed: "DomainSuffix(baidu.com) → DIRECT", observedRoute: .direct),
+            SelfTestResult(
+                name: "海外（google）", url: "https://www.google.com/generate_204", expected: .proxy,
+                reachable: false, milliseconds: 8001, error: "-1001 请求超时。"),
+        ]
+        input.coreLog = (0..<6).map { _ in
+            #"level=warning msg="[TCP] dial PROXY (match Match/) 198.18.0.1:1 --> api.example.com:443 error: context deadline exceeded""#
+        }.joined(separator: "\n")
+
+        let findings = DiagnosticsAnalyzer.findings(input)
+        let finding = findings.first { $0.title == "节点服务器连不上（直连正常）" }
+        XCTAssertEqual(finding?.severity, .problem)
+        XCTAssertTrue(finding?.detail.contains("context deadline exceeded") == true)
+        XCTAssertFalse(findings.contains { $0.title == "所有线路测速都失败" }, "有更精确的结论时不再重复报泛化版本")
+    }
+
+    func testRefusedNodePortIsReportedSeparately() {
+        var input = healthyInput()
+        input.nodes = [NodeDelay(name: "Mac-FRP", type: "Http", delay: nil)]
+        input.selfTest = [
+            SelfTestResult(
+                name: "国内网站", url: "https://www.baidu.com/", expected: .direct, reachable: true, status: 200,
+                milliseconds: 70, observed: "DomainSuffix(baidu.com) → DIRECT", observedRoute: .direct),
+            SelfTestResult(
+                name: "海外（google）", url: "https://www.google.com/generate_204", expected: .proxy,
+                reachable: false, milliseconds: 8001, error: "-1001 请求超时。"),
+        ]
+        input.coreLog = (0..<4).map { _ in
+            #"level=warning msg="[TCP] dial PROXY (match Match/) 198.18.0.1:1 --> a.com:443 error: dial tcp 203.0.113.9:7890: connect: connection refused""#
+        }.joined(separator: "\n")
+
+        XCTAssertTrue(DiagnosticsAnalyzer.findings(input).contains { $0.title == "节点端口没有服务（直连正常）" })
+    }
+
     func testSelfTestFindings() {
         var input = healthyInput()
         input.selfTest = [

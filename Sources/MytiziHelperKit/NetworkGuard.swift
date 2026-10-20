@@ -43,6 +43,10 @@ public final class NetworkGuard {
     private let runner: CommandRunner
     private let dnsAddress: String
     private let lock = NSLock()
+    /// 只保护下面的缓存，绝不和 `lock` 一起持有。status 查询在 helper 里非常频繁，
+    /// 如果它去抢 `lock`，就会卡在 apply 的一串 networksetup 后面，表现为 App 状态查询超时。
+    private let summaryLock = NSLock()
+    private var cachedSummary: NetworkChangeSummary?
     private let log: (String) -> Void
 
     public init(
@@ -57,10 +61,26 @@ public final class NetworkGuard {
 
     public var hasPendingState: Bool { FileManager.default.fileExists(atPath: statePath) }
 
+    /// 绝不阻塞：apply/restore 正在进行时，返回上一次已知的摘要（必要时为空）。
     public func currentSummary() -> NetworkChangeSummary {
-        lock.lock(); defer { lock.unlock() }
-        guard let state = loadState() else { return NetworkChangeSummary() }
-        return NetworkChangeSummary(dnsServices: state.dns.map(\.service), ipv6Services: state.ipv6.map(\.service))
+        summaryLock.lock()
+        let cached = cachedSummary
+        summaryLock.unlock()
+        if let cached { return cached }
+        // 第一次调用（例如 helper 重启后发现有遗留恢复点）读一次文件；正在被 apply/restore 占用时先返回空。
+        if lock.try() {
+            defer { lock.unlock() }
+            let summary = loadState().map(summary(of:)) ?? NetworkChangeSummary()
+            store(summary)
+            return summary
+        }
+        return NetworkChangeSummary()
+    }
+
+    private func store(_ summary: NetworkChangeSummary) {
+        summaryLock.lock()
+        cachedSummary = summary
+        summaryLock.unlock()
     }
 
     // MARK: 应用
@@ -106,6 +126,8 @@ public final class NetworkGuard {
                 }
             }
         }
+        // 先把“已经接管了哪些服务”更新到缓存，status 查询不会卡在这次 apply 上。
+        store(summary(of: state))
         guard !dnsTargets.isEmpty || !v6Targets.isEmpty else { return summary(of: state) }
 
         // 2) 恢复点落盘（fsync），然后才改系统。
@@ -141,6 +163,7 @@ public final class NetworkGuard {
     private func restoreLocked() -> [String] {
         guard let state = loadState() else {
             if hasPendingState { try? FileManager.default.removeItem(atPath: statePath) }
+            store(NetworkChangeSummary())
             return []
         }
         var failures: [String] = []
@@ -156,8 +179,10 @@ public final class NetworkGuard {
         flushCaches()
         if failures.isEmpty {
             try? FileManager.default.removeItem(atPath: statePath)
+            store(NetworkChangeSummary())
             log("网络设置已恢复")
         } else {
+            store(summary(of: state))
             failures.forEach { log($0) }
         }
         return failures

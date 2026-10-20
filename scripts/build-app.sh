@@ -2,7 +2,7 @@
 # 构建 MyTizi.app：通用二进制、内置 mihomo 与 GeoIP/GeoSite、ad-hoc 签名。
 #
 # 环境变量：
-#   VERSION  版本号，默认 0.1.0（Info.plist 与组件清单都会写入）
+#   VERSION  版本号，默认 0.2.0（Info.plist 与组件清单都会写入）
 #   OUT      输出目录，默认 dist/
 #   ARCHS    目标架构，默认 "arm64 x86_64"（通用二进制）；本机调试可设为 arm64
 #   DMG=1    另外输出 MyTizi-<版本>.dmg
@@ -14,7 +14,7 @@ set -eu
 root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 APP_NAME="MyTizi"
 BUNDLE_ID="com.mytizi.app"
-VERSION="${VERSION:-0.1.0}"
+VERSION="${VERSION:-0.2.0}"
 OUT="${OUT:-$root/dist}"
 ARCHS="${ARCHS:-arm64 x86_64}"
 IPC_VERSION="$(sed -n 's/.*ipcVersion = \([0-9][0-9]*\).*/\1/p' "$root/Sources/MytiziKit/AppInfo.swift")"

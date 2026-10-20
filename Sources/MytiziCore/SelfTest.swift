@@ -49,7 +49,7 @@ public struct RouteLogEntry: Equatable {
         else { return nil }
         let range = NSRange(line.startIndex..., in: line)
         guard let match = regex.firstMatch(in: line, range: range), match.numberOfRanges == 5 else { return nil }
-        func group(_ i: Int) -> String? { Range(match.range(at: i), in: line).map { String(line[$0]) } }
+        func group(_ index: Int) -> String? { Range(match.range(at: index), in: line).map { String(line[$0]) } }
         guard let host = group(1), let port = group(2).flatMap(Int.init), let rule = group(3), let chain = group(4) else { return nil }
         return RouteLogEntry(host: host, port: port, rule: rule, chain: chain)
     }
@@ -74,7 +74,8 @@ public enum SelfTest {
 
     public static let probes: [Probe] = [
         Probe(name: "国内网站", url: "https://www.baidu.com/", expected: .direct),
-        Probe(name: "国内 CDN（腾讯图片）", url: "https://qpic.cn/", expected: .direct),
+        // 腾讯的根域名（qpic.cn）不会返回内容，用它自检会把“CDN 正常”误报成超时；换成一个真实的静态图片。
+        Probe(name: "国内 CDN（腾讯图片）", url: "https://thirdqq.qlogo.cn/g?b=sdk&nk=10000&s=100", expected: .direct),
         Probe(name: "国内 CDN（阿里）", url: "https://g.alicdn.com/", expected: .direct),
         Probe(name: "海外（gstatic 204）", url: "https://www.gstatic.com/generate_204", expected: .proxy),
         Probe(name: "海外（google）", url: "https://www.google.com/generate_204", expected: .proxy),
@@ -82,11 +83,16 @@ public enum SelfTest {
 
     /// `coreLog` 是读取核心日志文本的闭包（App 里读 /Library/Logs/MyTizi/mihomo.log）。
     public static func run(coreLog: @escaping () -> String) async -> [SelfTestResult] {
-        var results: [SelfTestResult] = [dnsCheck()]
-        for probe in probes {
-            results.append(await run(probe, coreLog: coreLog))
+        // 五个探测并发跑：节点全挂时最坏耗时从 5×8 秒降到约 8 秒。
+        // 每条结果仍按 probes 的顺序返回（host 不同，日志归属不会串）。
+        var ordered = Array<SelfTestResult?>(repeating: nil, count: probes.count)
+        await withTaskGroup(of: (Int, SelfTestResult).self) { group in
+            for (index, probe) in probes.enumerated() {
+                group.addTask { (index, await run(probe, coreLog: coreLog)) }
+            }
+            for await (index, result) in group { ordered[index] = result }
         }
-        return results
+        return [dnsCheck()] + ordered.compactMap { $0 }
     }
 
     static func run(_ probe: Probe, coreLog: () -> String) async -> SelfTestResult {

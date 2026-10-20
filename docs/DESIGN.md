@@ -15,7 +15,7 @@
 - 多订阅、多配置切换；自定义规则 UI（只有一个文本文件入口，面向高级用户）。
 - 使用订阅里自带的规则/策略组（只取节点）。
 - Network Extension / 系统扩展（见 §2）。
-- 自动更新 App、开机自启、公证（没有 Developer ID）。
+- 自动替换 App、开机自启、公证（没有 Developer ID）。更新只做版本检测并打开下载页。
 
 ## 2. 关键决策
 
@@ -114,9 +114,9 @@ com.mytizi.helper（root LaunchDaemon，KeepAlive）
 报告结构（`DiagnosticsReport`）：
 
 1. **给 AI 的说明**：架构要点（TUN 地址、DNS 指向、规则顺序、日志格式 `match X using Y`）+「现象 → 可能原因」对照表；
-2. **自动识别的结论**（`DiagnosticsAnalyzer`，纯函数）：组件未装/过期、核心崩溃、找不到 TUN 网卡、**另一个 TUN 抢同一地址段**、系统 DNS 未指向 TUN、**断开后 DNS 仍指向 198.18.0.2（会断网）并给出修复命令**、IPv6 仍开、系统代理指向死端口、**失效的 `/etc/resolver/*`**、其他代理/VPN 进程、订阅过期/流量用尽/超过 7 天未更新、所有线路超时、核心日志高频错误签名；
+2. **自动识别的结论**（`DiagnosticsAnalyzer`，纯函数）：组件未装/过期、核心崩溃、找不到 TUN 网卡、**另一个 TUN 抢同一地址段**、系统 DNS 未指向 TUN、**断开后 DNS 仍指向 198.18.0.2（会断网）并给出修复命令**、IPv6 仍开、系统代理指向死端口、**失效的 `/etc/resolver/*`**、其他代理/VPN 进程、订阅过期/流量用尽/超过 7 天未更新、**“直连正常但所有代理超时” → 节点服务器连不上**（区分 TCP 超时、端口拒绝、TLS/认证失败）、核心日志高频错误签名；
 3. 当前状态、订阅（仅主机）、线路延迟；
-4. **实机自检**：经真实网络栈访问国内站、国内 CDN（腾讯/阿里）、海外站，并对照核心日志确认**实际命中的规则与出口**，与预期不符会标出；
+4. **实机自检**：经真实网络栈访问国内站、国内 CDN（腾讯/阿里）、海外站（5 个探测并发执行），并对照核心日志确认**实际命中的规则与出口**，与预期不符会标出；
 5. 系统网络事实（默认路由、scutil DNS、各服务 DNS/IPv6、系统代理、utun、`/etc/resolver`、冲突进程）；
 6. **所有文件与日志的绝对路径 + 可直接执行的命令**（能读文件的 AI 可以自己继续查）；
 7. 日志尾部：App、helper、核心的警告与错误。「完整版」另含最近 200 行连接日志（含访问过的域名，发送前请自行确认）。
@@ -129,7 +129,7 @@ com.mytizi.helper（root LaunchDaemon，KeepAlive）
 Sources/
   MytiziKit/        共享：AppInfo、SystemPaths、IPC 协议、Unix socket、Shell、RotatingLog
   MytiziCore/       YAML、RuleCatalog、ConfigBuilder、SubscriptionService、CoreProbe、MihomoAPI、
-                    HelperClient/Installer、SystemFacts、SelfTest、Diagnostics*、Redactor
+                    HelperClient/Installer、SystemFacts、SelfTest、Diagnostics*、Redactor、UpdateChecker
   MytiziHelperKit/  NetworkSetup(解析)、NetworkGuard、CoreSupervisor、HelperServer
   MytiziHelper/     helper 入口（LaunchDaemon）
   MyTizi/           SwiftUI：AppModel、Views、App、命令行诊断、DEBUG 快照渲染
@@ -139,7 +139,7 @@ core.lock           固定的 mihomo 版本与 SHA-256
 
 ## 9. 验证状态（诚实版）
 
-**已自动化验证**（`swift test`，83 项，约 4 秒）
+**已自动化验证**（`swift test`，93 项，约 5 秒）
 
 - 配置：生成的配置通过真实 mihomo v1.19.32 的 `-t`；规则阶梯顺序、IPv6 全关、TUN/DNS 默认值。
 - 订阅：本地 HTTP 服务器上的真实 `URLSession` 抓取（头部、HTTP 错误、网页、不可达）；**Clash YAML 与 base64 的 ss/trojan/vmess 列表都由真实 mihomo 解析出节点**；垃圾内容得到 0 节点。
@@ -160,6 +160,6 @@ core.lock           固定的 mihomo 版本与 SHA-256
 ## 10. 后续
 
 - 联调后根据真实日志调整 DNS/嗅探细节；
-- 自启动与开机自动连接（`SMAppService`）、App 内更新；
+- 自启动与开机自动连接（`SMAppService`）、可原地替换的签名更新（目前只检测新版本并打开下载页）；
 - 订阅里的规则可选启用；多订阅；
 - 「线路」自动故障转移的更多反馈（目前由 `url-test` 负责）。

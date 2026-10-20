@@ -64,26 +64,38 @@ public struct AppSettings: Codable, Equatable {
     public var takeOverDNS: Bool
     public var healthCheckURL: String
     public var autoConnectOnLaunch: Bool
+    /// 每天自动检测一次新版本（只检测，不自动替换 App）。
+    public var autoCheckUpdates: Bool
+    public var lastUpdateCheck: Date?
+    /// 用户点了“忽略此版本”的版本号。
+    public var skippedUpdateVersion: String?
 
     public init(
         subscription: SubscriptionRecord? = nil, disableIPv6: Bool = true, takeOverDNS: Bool = true,
-        healthCheckURL: String = ConfigBuilder.defaultHealthCheckURL, autoConnectOnLaunch: Bool = false
+        healthCheckURL: String = ConfigBuilder.defaultHealthCheckURL, autoConnectOnLaunch: Bool = false,
+        autoCheckUpdates: Bool = true, lastUpdateCheck: Date? = nil, skippedUpdateVersion: String? = nil
     ) {
         self.subscription = subscription
         self.disableIPv6 = disableIPv6
         self.takeOverDNS = takeOverDNS
         self.healthCheckURL = healthCheckURL
         self.autoConnectOnLaunch = autoConnectOnLaunch
+        self.autoCheckUpdates = autoCheckUpdates
+        self.lastUpdateCheck = lastUpdateCheck
+        self.skippedUpdateVersion = skippedUpdateVersion
     }
 
     // 逐项容错解码：以后加字段不会让旧的 settings.json 读失败。
     public init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        subscription = try c.decodeIfPresent(SubscriptionRecord.self, forKey: .subscription)
-        disableIPv6 = try c.decodeIfPresent(Bool.self, forKey: .disableIPv6) ?? true
-        takeOverDNS = try c.decodeIfPresent(Bool.self, forKey: .takeOverDNS) ?? true
-        healthCheckURL = try c.decodeIfPresent(String.self, forKey: .healthCheckURL) ?? ConfigBuilder.defaultHealthCheckURL
-        autoConnectOnLaunch = try c.decodeIfPresent(Bool.self, forKey: .autoConnectOnLaunch) ?? false
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        subscription = try container.decodeIfPresent(SubscriptionRecord.self, forKey: .subscription)
+        disableIPv6 = try container.decodeIfPresent(Bool.self, forKey: .disableIPv6) ?? true
+        takeOverDNS = try container.decodeIfPresent(Bool.self, forKey: .takeOverDNS) ?? true
+        healthCheckURL = try container.decodeIfPresent(String.self, forKey: .healthCheckURL) ?? ConfigBuilder.defaultHealthCheckURL
+        autoConnectOnLaunch = try container.decodeIfPresent(Bool.self, forKey: .autoConnectOnLaunch) ?? false
+        autoCheckUpdates = try container.decodeIfPresent(Bool.self, forKey: .autoCheckUpdates) ?? true
+        lastUpdateCheck = try container.decodeIfPresent(Date.self, forKey: .lastUpdateCheck)
+        skippedUpdateVersion = try container.decodeIfPresent(String.self, forKey: .skippedUpdateVersion)
     }
 }
 

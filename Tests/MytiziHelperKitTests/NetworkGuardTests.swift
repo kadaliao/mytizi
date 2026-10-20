@@ -117,6 +117,38 @@ final class NetworkGuardTests: XCTestCase {
         XCTAssertEqual(machine.service("Home").v6.address, "fd00::5", "手动 IPv6 要连地址一起恢复")
     }
 
+    func testStatusSummaryNeverBlocksBehindApply() throws {
+        // 复现线上观察到的 "status 查询超时 -> App 关闭 socket -> helper 写回 EPIPE"：
+        // apply 期间会连续执行 networksetup，status 的摘要查询绝不能去抢同一把锁。
+        final class SlowRunner: CommandRunner {
+            let inner: FakeNetworkSetup
+
+            init(inner: FakeNetworkSetup) { self.inner = inner }
+
+            func run(_ executable: String, _ arguments: [String]) -> ShellResult {
+                Thread.sleep(forTimeInterval: 0.15)
+                return inner.run(executable, arguments)
+            }
+        }
+
+        let machine = FakeNetworkSetup(services: [("Wi-Fi", .init(device: "en1", dns: ["192.168.2.1"]))])
+        let guardian = NetworkGuard(statePath: statePath, runner: SlowRunner(inner: machine))
+        let done = DispatchSemaphore(value: 0)
+        Thread.detachNewThread {
+            _ = try? guardian.apply(takeOverDNS: true, disableIPv6: true)
+            done.signal()
+        }
+        Thread.sleep(forTimeInterval: 0.1)
+
+        let started = Date()
+        _ = guardian.currentSummary()
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.05, "网络设置在改的过程中，status 也不能被卡住")
+        XCTAssertEqual(done.wait(timeout: .now() + 10), .success)
+        XCTAssertEqual(guardian.currentSummary().dnsServices, ["Wi-Fi"])
+        _ = guardian.restore()
+        XCTAssertTrue(guardian.currentSummary().isEmpty)
+    }
+
     func testSnapshotIsWrittenBeforeAnySystemChange() throws {
         let machine = makeMachine()
         var snapshotExistedAtFirstChange: Bool?

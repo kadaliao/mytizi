@@ -5,6 +5,9 @@ public enum AppInfo {
     public static let displayName = "MyTizi"
     public static let bundleID = "com.mytizi.app"
     public static let helperLabel = "com.mytizi.helper"
+    /// GitHub 仓库（owner/name），用于检查更新。
+    public static let repository = "kadaliao/mytizi"
+    public static var projectURL: String { "https://github.com/\(repository)" }
 
     /// App 与 helper 之间的协议版本。不兼容变化时递增，App 会提示更新组件。
     public static let ipcVersion = 1

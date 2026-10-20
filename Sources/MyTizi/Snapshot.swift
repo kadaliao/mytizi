@@ -40,6 +40,17 @@ enum Snapshot {
                                   errorMessage: "没能启动虚拟网卡。请先退出其他代理/VPN 软件再试；仍不行请复制诊断信息。")),
             ("7-notice", .preview(phase: .connected, subscription: subscription, nodes: nodes, activeNode: "香港-01",
                                   notice: "已复制诊断信息，直接粘贴给 AI 即可", startedAt: Date().addingTimeInterval(-90))),
+            ("8-update-available", .preview(
+                phase: .connected, subscription: subscription, nodes: nodes, activeNode: "香港-01",
+                startedAt: Date().addingTimeInterval(-47 * 60),
+                availableUpdate: UpdateInfo(
+                    version: "0.2.0", tag: "v0.2.0",
+                    releaseURL: URL(string: "https://github.com/kadaliao/mytizi/releases/tag/v0.2.0")!,
+                    downloadURL: nil))),
+            ("9-nodes-unreachable", .preview(
+                phase: .connected, subscription: subscription, nodes: nodes.map { NodeRow(name: $0.name, type: $0.type, delay: nil) },
+                activeNode: "香港-01", startedAt: Date().addingTimeInterval(-3600),
+                connectivityIssue: "所有线路都连不上：节点服务器可能已经不可用，或者当前网络挡住了代理协议。")),
         ]
     }
 
@@ -87,7 +98,7 @@ enum Snapshot {
 
     static func runScreenshot(directory: String) {
         _ = NSApplication.shared
-        versionOverride = CommandLine.arguments.firstIndex(of: "--version").flatMap { CommandLine.arguments.indices.contains($0 + 1) ? CommandLine.arguments[$0 + 1] : nil } ?? "0.1.0"
+        versionOverride = CommandLine.arguments.firstIndex(of: "--version").flatMap { CommandLine.arguments.indices.contains($0 + 1) ? CommandLine.arguments[$0 + 1] : nil } ?? "0.2.0"
         try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
         defer { previewDirectories.forEach { try? FileManager.default.removeItem(at: $0) } }
 

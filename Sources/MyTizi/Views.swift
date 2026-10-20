@@ -137,6 +137,7 @@ struct MainView: View {
             StatusSection()
             Spacer(minLength: 12)
             VStack(spacing: 10) {
+                if let issue = model.connectivityIssue { ConnectivityCard(text: issue) }
                 if model.phase == .failed { FailureCard() }
                 SubscriptionCard()
                 LinePicker()
@@ -155,6 +156,10 @@ struct MainView: View {
             Menu {
                 Button("更新订阅") { Task { await model.refreshSubscription() } }
                     .disabled(model.isRefreshingSubscription)
+                Button(model.isCheckingUpdate ? "正在检查更新…" : "检查更新…") {
+                    Task { await model.checkForUpdates(manual: true) }
+                }
+                .disabled(model.isCheckingUpdate)
                 Button("高级设置…") { showingAdvanced = true }
             } label: {
                 Image(systemName: "ellipsis.circle").font(.title3)
@@ -171,7 +176,23 @@ struct MainView: View {
         HStack {
             TroubleMenu()
             Spacer()
-            Text(AppModel.appVersion == "dev" ? "dev" : "v\(AppModel.appVersion)").font(.caption).foregroundStyle(.tertiary)
+            if let update = model.availableUpdate {
+                Menu {
+                    Button("下载 v\(update.version)") { model.openUpdate() }
+                    Button("忽略此版本") { model.skipUpdate() }
+                } label: {
+                    Label("新版本 v\(update.version)", systemImage: "arrow.down.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.tint)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("发现新版本，点击下载")
+            } else {
+                Text(AppModel.appVersion == "dev" ? "dev" : "v\(AppModel.appVersion)")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 14)
@@ -278,6 +299,30 @@ struct FailureCard: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+struct ConnectivityCard: View {
+    @EnvironmentObject var model: AppModel
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Label {
+                Text(text)
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            }
+            Spacer(minLength: 6)
+            Button("诊断") { Task { await model.copyDiagnostics(full: false) } }
+                .controlSize(.small)
+                .disabled(model.isCopyingDiagnostics)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -445,11 +490,28 @@ struct AdvancedSheet: View {
                 }
             }
             Toggle(isOn: binding(\.autoConnectOnLaunch)) { Text("打开 App 时自动连接") }
+            Toggle(isOn: binding(\.autoCheckUpdates)) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("自动检查更新")
+                    Text("每天检查一次 GitHub Releases，只提示，不会自动替换 App。").font(.caption).foregroundStyle(.secondary)
+                }
+            }
 
             Divider()
             HStack {
                 Button("编辑自定义规则…") { model.openCustomRulesFile() }
                 Button("更换订阅…") { confirmRemove = true }
+            }
+            HStack {
+                Button(model.isCheckingUpdate ? "正在检查更新…" : "检查更新…") {
+                    dismiss()
+                    Task { await model.checkForUpdates(manual: true) }
+                }
+                .disabled(model.isCheckingUpdate)
+                Link("项目主页", destination: URL(string: AppInfo.projectURL) ?? URL(string: "https://github.com")!)
+                    .font(.callout)
+                Spacer()
+                Text("v\(AppModel.appVersion)").font(.caption).foregroundStyle(.secondary)
             }
             Button("卸载后台组件…", role: .destructive) { confirmUninstall = true }
 
