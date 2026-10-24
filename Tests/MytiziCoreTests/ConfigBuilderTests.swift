@@ -87,6 +87,15 @@ final class RuleCatalogTests: XCTestCase {
     }
 
     /// 此前同类工具踩坑记录里的关键域名必须在内置清单里。
+    func testTailscaleDomainsNeverGetFakeIP() {
+        // Tailscale 把 socket 绑在物理网卡上，fake-ip 会被发到网关黑洞；这些域名必须返回真实地址。
+        for domain in ["+.tailscale.com", "+.tailscale.io", "+.ts.net"] {
+            XCTAssertTrue(RuleCatalog.fakeIPFilter.contains(domain), domain)
+        }
+        XCTAssertEqual(RuleCatalog.tunRouteExclude, ["100.64.0.0/10"])
+        XCTAssertTrue(RuleCatalog.privateIPv4.contains("100.64.0.0/10"), "路由层排除之外，规则里也保持直连（mixed-port 入口用）")
+    }
+
     func testKnownProblemDomainsArePinned() {
         let direct = Set(RuleCatalog.directDomains)
         for domain in ["qpic.cn", "qlogo.cn", "weixin.com", "feishu.cn", "feishucdn.com", "byteimg.com", "larksuite.com", "hdslb.com", "alicdn.com"] {
@@ -153,6 +162,16 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertTrue(text.contains("auto-detect-interface: true"))
         XCTAssertTrue(text.contains("external-controller: \"127.0.0.1:19097\""), "控制器只监听回环")
         XCTAssertTrue(text.contains("allow-lan: false"))
+        XCTAssertTrue(text.contains("route-exclude-address:\n    - \"100.64.0.0/10\""), "Tailscale 的地址段在路由层就不进 TUN")
+    }
+
+    func testEgressInterfaceIsPinnedOnlyWhenKnown() {
+        let auto = ConfigBuilder.build(options()).render()
+        XCTAssertFalse(auto.contains("interface-name"), "没拿到路由表时交给核心自动检测")
+        let pinned = ConfigBuilder.build(options { $0.egressInterface = "en0" }).render()
+        XCTAssertTrue(pinned.contains("\ninterface-name: \"en0\"\n"), "出站绑定到物理网卡，其他 VPN 抢了默认路由也抢不走")
+        XCTAssertTrue(pinned.contains("auto-detect-interface: true"), "自动检测保留为兜底（核心里显式 interface-name 优先）")
+        XCTAssertFalse(ConfigBuilder.build(options { $0.egressInterface = "" }).render().contains("interface-name"))
     }
 
     func testMixedPortIsOptional() {
@@ -189,6 +208,7 @@ final class ConfigBuilderTests: XCTestCase {
             $0.directHosts = ["sub.example.org"]
             $0.customRules = ["DOMAIN-SUFFIX,example.com,PROXY", "IP-CIDR,203.0.113.0/24,DIRECT,no-resolve"]
             $0.localDNS = ["192.168.2.1"]
+            $0.egressInterface = "en0"
         }).render()
         let configURL = home.appendingPathComponent("config.yaml")
         try config.write(to: configURL, atomically: true, encoding: .utf8)

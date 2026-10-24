@@ -142,8 +142,9 @@ final class SystemFactsParserTests: XCTestCase {
           505 /usr/sbin/tailscaled
         """
         let found = SystemFactsParser.conflictingProcesses(fromPS: ps)
-        XCTAssertEqual(found.count, 3)
+        XCTAssertEqual(found.count, 2)
         XCTAssertFalse(found.contains { $0.contains("/MyTizi/") }, "自己的核心不算冲突")
+        XCTAssertFalse(found.contains { $0.contains("tailscaled") }, "Tailscale 可以共存，由路由与 DNS 检查单独判断")
     }
 }
 
@@ -184,10 +185,11 @@ final class AnalyzerTests: XCTestCase {
         input.settings.subscription = SubscriptionRecord(
             url: "https://sub.example.com/x?token=abcdef123456", name: "公司", addedAt: input.now, updatedAt: input.now,
             nodes: [ProbedNode(name: "HK", type: "Shadowsocks")])
-        input.helperStatus = HelperStatus(phase: .running, corePID: 99, startedAt: input.now, controllerPort: 19097, controllerSecret: "s", tunInterface: "utun7")
+        input.helperStatus = HelperStatus(phase: .running, corePID: 99, startedAt: input.now, controllerPort: 19097, controllerSecret: "s", tunInterface: "utun7", egressInterface: "en0")
         var facts = SystemFacts()
         facts.tunInterfaces = [TunInterface(name: "utun7", addresses: [AppInfo.tunGateway])]
         facts.dnsResolvers = [DNSResolver(index: 1, nameservers: [AppInfo.tunDNS], domain: nil, port: nil, scoped: false)]
+        facts.defaultRoutes = [DefaultRoute(gateway: "192.168.2.1", interface: "en0", flags: "UGScg")]
         input.facts = facts
         input.nodes = [NodeDelay(name: "HK", type: "Shadowsocks", delay: 80)]
         return input
@@ -203,6 +205,53 @@ final class AnalyzerTests: XCTestCase {
         let findings = DiagnosticsAnalyzer.findings(input)
         XCTAssertEqual(findings.first?.severity, .problem)
         XCTAssertTrue(findings.first?.title.contains("DNS") == true)
+    }
+
+    func testTailscaleCoexistingWithoutExitNodeIsSilent() {
+        var input = healthyInput()
+        input.facts.tunInterfaces.append(TunInterface(name: "utun4", addresses: ["100.101.102.103"]))
+        input.facts.otherProxyProcesses = []
+        XCTAssertEqual(DiagnosticsAnalyzer.findings(input), [], "Tailscale 只接管自己的地址段时不是问题")
+    }
+
+    func testTailscaleExitNodeIsAWarningWhenTheEgressIsPinned() {
+        var input = healthyInput()
+        input.facts.tunInterfaces.append(TunInterface(name: "utun4", addresses: ["100.101.102.103"]))
+        input.facts.defaultRoutes.insert(DefaultRoute(gateway: "utun4", interface: "utun4", flags: "UCSg"), at: 0)
+        let findings = DiagnosticsAnalyzer.findings(input)
+        XCTAssertEqual(findings.count, 1)
+        XCTAssertEqual(findings.first?.severity, .warning, "出口已固定在 en0，代理流量不受影响")
+        XCTAssertTrue(findings.first?.title.contains("exit node") == true, findings.first?.title ?? "")
+        XCTAssertTrue(findings.first?.detail.contains("en0") == true)
+    }
+
+    func testForeignDefaultRouteWithoutPinnedEgressIsAProblem() {
+        var input = healthyInput()
+        input.helperStatus?.egressInterface = nil
+        input.facts.defaultRoutes.insert(DefaultRoute(gateway: "utun9", interface: "utun9", flags: "UCSg"), at: 0)
+        let finding = DiagnosticsAnalyzer.findings(input).first
+        XCTAssertEqual(finding?.severity, .problem)
+        XCTAssertTrue(finding?.title.contains("另一个 VPN（utun9）") == true, finding?.title ?? "")
+    }
+
+    func testOwnTUNAsFirstDefaultRouteIsNotReported() {
+        var input = healthyInput()
+        input.facts.defaultRoutes.insert(DefaultRoute(gateway: "198.18.0.1", interface: "utun7", flags: "UGSc"), at: 0)
+        XCTAssertEqual(DiagnosticsAnalyzer.findings(input), [])
+    }
+
+    func testTailscaleDNSOverrideIsExplained() {
+        var input = healthyInput()
+        input.facts.dnsResolvers = [DNSResolver(index: 1, nameservers: ["100.100.100.100"], domain: nil, port: nil, scoped: false)]
+        let finding = DiagnosticsAnalyzer.findings(input).first
+        XCTAssertEqual(finding?.severity, .problem)
+        XCTAssertEqual(finding?.title, "Tailscale 覆盖了系统 DNS")
+        XCTAssertTrue(finding?.detail.contains("Override DNS servers") == true)
+    }
+
+    func testCGNATDetection() {
+        XCTAssertTrue(DiagnosticsAnalyzer.isCGNAT("100.64.0.1") && DiagnosticsAnalyzer.isCGNAT("100.127.255.254"))
+        XCTAssertFalse(DiagnosticsAnalyzer.isCGNAT("100.63.255.255") || DiagnosticsAnalyzer.isCGNAT("100.128.0.0") || DiagnosticsAnalyzer.isCGNAT("198.18.0.1"))
     }
 
     func testMissingTUNAndRivalTUN() {

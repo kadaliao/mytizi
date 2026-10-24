@@ -84,6 +84,7 @@ public enum DiagnosticsReport {
         > 3. 规则顺序（先匹配先生效）：自定义 → 订阅主机直连 → 内网直连 → 国内平台与 CDN 域名直连 → 海外固定域名走代理 → GeoSite 国内直连 → UDP 443 拒绝（迫使 QUIC 回退到 TCP）→ GeoSite 海外走代理 → `GEOIP,CN` 直连（兜底）→ 其余走代理。
         > 4. 订阅由 App 抓取后交给 mihomo 作为 file provider 解析；订阅自带的规则不会被使用。GeoIP/GeoSite 数据库随 App 内置，核心不会联网更新。
         > 5. 核心日志里 `match X using Y` 表示该连接命中的规则和出口：`DIRECT` 是直连，`PROXY[…]` 是走代理，`REJECT` 是拒绝。
+        > 6. 核心的出站网卡固定在物理默认网卡上（`interface-name`，后台组件随网络变化更新）。Tailscale 等 VPN 可以共存：它们的地址段（100.64.0.0/10）不进本 App 的 TUN；但它们开启 exit node 会接管默认路由，开启「Override DNS servers」会让解析绕过 mihomo，这两种情况诊断会单独指出。
         >
         > **常见现象 → 可能原因**
         > - 国内网站 / 微信图片 / 飞书打不开或很慢 → 命中了 `PROXY`（在日志里搜该域名），需要补直连域名；或 DNS 没被接管。
@@ -105,6 +106,7 @@ public enum DiagnosticsReport {
             if let pid = status.corePID { parts.append("核心 pid \(pid)") }
             if let started = status.startedAt { parts.append("已运行 \(duration(from: started, to: input.now))") }
             if let tun = status.tunInterface { parts.append("TUN \(tun)") }
+            parts.append("出口 \(status.egressInterface ?? "自动检测")")
             if let port = status.controllerPort { parts.append("控制端口 127.0.0.1:\(port)") }
             lines.append("- 后台组件：" + parts.joined(separator: "，"))
             if !status.changes.isEmpty {
@@ -151,6 +153,9 @@ public enum DiagnosticsReport {
         let facts = input.facts
         var lines: [String] = []
         lines.append("- 默认路由：\(facts.defaultRoute.isEmpty ? "未知" : facts.defaultRoute)")
+        if !facts.defaultRoutes.isEmpty {
+            lines.append("- 全部默认路由（按优先级）：" + facts.defaultRoutes.map { "\($0.interface) via \($0.gateway) [\($0.flags)]" }.joined(separator: "；"))
+        }
         let primary = facts.dnsResolvers.filter { !$0.scoped }.prefix(6)
         lines.append("- 系统 DNS（scutil，非 scoped）：" + (primary.isEmpty ? "无" : primary.map {
             "#\($0.index) \($0.nameservers.isEmpty ? "-" : $0.nameservers.joined(separator: ","))\($0.domain.map { " domain=\($0)" } ?? "")\($0.port.map { " port=\($0)" } ?? "")"

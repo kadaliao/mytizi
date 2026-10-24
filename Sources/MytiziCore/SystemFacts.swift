@@ -46,6 +46,8 @@ public struct SystemFacts {
     public var dnsResolvers: [DNSResolver] = []
     public var systemProxy = SystemProxyInfo()
     public var defaultRoute = ""
+    /// `netstat -rn` 里所有 default 行，按优先级；第一条是 utun 就说明别的 VPN（如 Tailscale exit node）接管了默认路由。
+    public var defaultRoutes: [DefaultRoute] = []
     public var tunInterfaces: [TunInterface] = []
     public var resolverFiles: [ResolverFile] = []
     /// resolver 文件里指向本机回环的端口里，实际没有进程监听的那些。
@@ -167,9 +169,11 @@ public enum SystemFactsParser {
     }
 
     /// 已知会与本 App 的 TUN 冲突的代理/VPN 进程（按可执行文件名匹配）。
+    /// Tailscale 不在这里：它可以与本 App 共存，真正会冲突的两种情况（exit node 接管默认路由、覆盖系统 DNS）
+    /// 由路由表与 DNS 的专门检查负责，给出的也是针对性的修法。
     public static let conflictingProcessNames: [String] = [
         "mihomo", "clash", "verge-mihomo", "sing-box", "xray", "v2ray", "surge", "clashx", "clash-verge", "shadowrocket",
-        "stash", "tailscaled", "wireguard", "openvpn", "hysteria", "tuic", "naive",
+        "stash", "wireguard", "openvpn", "hysteria", "tuic", "naive",
     ]
 
     public static func conflictingProcesses(fromPS text: String, excludingPIDs: Set<Int> = []) -> [String] {
@@ -205,6 +209,7 @@ public enum SystemFactsCollector {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { $0.hasPrefix("gateway:") || $0.hasPrefix("interface:") }
             .joined(separator: "  ")
+        facts.defaultRoutes = RoutingTable.currentDefaultRoutes()
 
         let ifconfig = Shell.run("/sbin/ifconfig", [], timeout: 5).stdout
         facts.tunInterfaces = SystemFactsParser.tunInterfaces(fromIfconfig: ifconfig)

@@ -287,6 +287,8 @@ final class AppModel: ObservableObject {
             options.directHosts = [subscription.host].filter { !$0.isEmpty }
             options.healthCheckURL = settings.healthCheckURL
             options.localDNS = Self.currentSystemDNS()
+            // 出口固定在物理默认网卡上：Tailscale 等 VPN 开了 exit node 也抢不走代理流量；helper 会随网络变化更新。
+            options.egressInterface = RoutingTable.physicalEgress()
             do {
                 options.customRules = try store.loadCustomRules()
             } catch {
@@ -300,7 +302,8 @@ final class AppModel: ObservableObject {
             let params = StartParams(
                 configYAML: yaml, files: [HelperFile(path: "providers/sub.yaml", data: body)],
                 controllerPort: controllerPort, controllerSecret: secret,
-                takeOverDNS: settings.takeOverDNS, disableIPv6: settings.disableIPv6)
+                takeOverDNS: settings.takeOverDNS, disableIPv6: settings.disableIPv6,
+                egressInterface: options.egressInterface)
             let status = try await helper.start(params)
             helperStatus = status
             api = MihomoAPI(port: controllerPort, secret: secret)
@@ -308,7 +311,7 @@ final class AppModel: ObservableObject {
             lastDelayRefresh = .distantPast
             lastConnectivityCheck = .distantPast
             connectivityIssue = nil
-            log("已连接")
+            log("已连接，出口 \(status.egressInterface ?? "自动检测")")
             await refreshRuntimeInfo()
         } catch HelperInstaller.InstallError.cancelled {
             api = nil
