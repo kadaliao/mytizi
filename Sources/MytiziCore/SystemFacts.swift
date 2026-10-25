@@ -134,7 +134,8 @@ public enum SystemFactsParser {
         return result
     }
 
-    /// 带全局 IPv6 地址（非 fe80 链路本地）的网卡名。
+    /// 带全局 IPv6 地址的网卡名。只算能上公网的全局单播地址；链路本地（fe80::/10）和
+    /// ULA（fc00::/7，OrbStack、Docker 等虚拟网桥常用）出不了本机，不会绕过 TUN。
     public static func globalIPv6Interfaces(fromIfconfig text: String) -> [String] {
         var result: [String] = []
         var name: String?
@@ -148,9 +149,18 @@ public enum SystemFactsParser {
                   !name.hasPrefix("llw")
             else { continue }
             let address = trimmed.split(separator: " ").dropFirst().first.map(String.init) ?? ""
-            if !address.lowercased().hasPrefix("fe80") && !result.contains(name) { result.append(name) }
+            if isGlobalUnicastIPv6(address) && !result.contains(name) { result.append(name) }
         }
         return result
+    }
+
+    /// 是否属于全局单播 2000::/3（公网 IPv6 都在这个段里）。按第一段的数值判断，不靠字符串前缀。
+    static func isGlobalUnicastIPv6(_ address: String) -> Bool {
+        let bare = address.split(separator: "%").first.map(String.init) ?? address
+        guard let head = bare.split(separator: ":", omittingEmptySubsequences: false).first,
+              !head.isEmpty, head.count <= 4, let value = UInt16(head, radix: 16)
+        else { return false }
+        return value & 0xE000 == 0x2000
     }
 
     /// /etc/resolver/<域名> 文件内容。

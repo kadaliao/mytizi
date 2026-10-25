@@ -133,6 +133,38 @@ final class SystemFactsParserTests: XCTestCase {
         XCTAssertEqual(SystemFactsParser.globalIPv6Interfaces(fromIfconfig: text), ["en1"], "只算物理网卡上的全局地址，链路本地和 utun 不算")
     }
 
+    func testULAOnVirtualBridgeIsNotGlobalIPv6() {
+        // OrbStack 的 bridge100 只有链路本地和 ULA（fd07:…）地址，出不了本机，不该报“IPv6 仍然开启”。
+        let bridgeOnly = """
+        en1: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
+        \tinet 192.168.2.205 netmask 0xffffff00 broadcast 192.168.2.255
+        bridge100: flags=8a63<UP,BROADCAST,SMART,RUNNING,ALLMULTI,SIMPLEX,MULTICAST> mtu 1500
+        \tinet 192.168.139.3 netmask 0xfffffe00 broadcast 192.168.139.255
+        \tinet6 fe80::5c1b:f4ff:fe49:7c64%bridge100 prefixlen 64 scopeid 0x16
+        \tinet6 fd07:b51a:cc66:0:a617:db5e:ab7:e9f1 prefixlen 64
+        """
+        XCTAssertEqual(SystemFactsParser.globalIPv6Interfaces(fromIfconfig: bridgeOnly), [])
+
+        let withPublic = bridgeOnly + """
+
+        en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
+        \tinet6 fdaa:1:2:3::4 prefixlen 64 autoconf secured
+        \tinet6 240e:306:289a:400:e25d:54ff:fe1a:e967 prefixlen 64 autoconf secured
+        """
+        XCTAssertEqual(SystemFactsParser.globalIPv6Interfaces(fromIfconfig: withPublic), ["en0"], "同一网卡上有公网地址时仍要报")
+    }
+
+    func testGlobalUnicastIPv6Range() {
+        for address in ["2408:8207:1234::5", "240e:306:289a:400:e25d:54ff:fe1a:e967", "2001:db8::1", "3fff::1"] {
+            XCTAssertTrue(SystemFactsParser.isGlobalUnicastIPv6(address), address)
+        }
+        for address in [
+            "fd07:b51a:cc66:0:a617:db5e:ab7:e9f1", "FC00::1", "fe80::1%en1", "FE80::1", "::1", "::", "ff02::1", "fd::1", "4000::1", "", "not-an-ip",
+        ] {
+            XCTAssertFalse(SystemFactsParser.isGlobalUnicastIPv6(address), address)
+        }
+    }
+
     func testConflictingProcesses() {
         let ps = """
           101 /usr/libexec/syslogd
