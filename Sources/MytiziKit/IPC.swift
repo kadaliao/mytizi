@@ -33,10 +33,13 @@ public struct StartParams: Codable {
     public var disableIPv6: Bool
     /// 配置里启用了 TUN 时为 true：helper 会等 TUN 网卡真正出现才算连接成功。
     public var expectTUN: Bool
+    /// 配置里 `interface-name` 固定的出口网卡（App 生成配置时从路由表取得）；nil 表示交给核心自动检测。
+    /// helper 会在启动后与网络变化时重新核对，并通过控制接口改过去。
+    public var egressInterface: String?
 
     public init(
         configYAML: String, files: [HelperFile], controllerPort: Int, controllerSecret: String,
-        takeOverDNS: Bool, disableIPv6: Bool, expectTUN: Bool = true
+        takeOverDNS: Bool, disableIPv6: Bool, expectTUN: Bool = true, egressInterface: String? = nil
     ) {
         self.configYAML = configYAML
         self.files = files
@@ -45,6 +48,7 @@ public struct StartParams: Codable {
         self.takeOverDNS = takeOverDNS
         self.disableIPv6 = disableIPv6
         self.expectTUN = expectTUN
+        self.egressInterface = egressInterface
     }
 }
 
@@ -129,12 +133,14 @@ public struct HelperStatus: Codable, Equatable {
     /// 仅在 running 时返回：同一个用户的 App 重新打开后据此重新接上控制器。
     public var controllerSecret: String?
     public var tunInterface: String?
+    /// 核心当前固定的出口网卡（物理默认网卡）；nil 表示核心在自动检测。
+    public var egressInterface: String?
     public var changes: NetworkChangeSummary
     public var lastExit: CoreExit?
 
     public init(
         phase: Phase, corePID: Int32? = nil, startedAt: Date? = nil, controllerPort: Int? = nil,
-        controllerSecret: String? = nil, tunInterface: String? = nil,
+        controllerSecret: String? = nil, tunInterface: String? = nil, egressInterface: String? = nil,
         changes: NetworkChangeSummary = .init(), lastExit: CoreExit? = nil
     ) {
         self.phase = phase
@@ -143,6 +149,7 @@ public struct HelperStatus: Codable, Equatable {
         self.controllerPort = controllerPort
         self.controllerSecret = controllerSecret
         self.tunInterface = tunInterface
+        self.egressInterface = egressInterface
         self.changes = changes
         self.lastExit = lastExit
     }

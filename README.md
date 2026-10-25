@@ -25,7 +25,7 @@
 2. 首次打开若提示"无法验证开发者"：进入「系统设置 → 隐私与安全性」，点一次「仍要打开」。
 3. 粘贴订阅链接，点中间的大按钮。第一次连接会请求一次管理员授权，用来安装后台组件，之后不再询问。
 
-需要 macOS 13 或更新，Apple 芯片和 Intel 都支持。请不要同时运行其他会开 TUN 的代理软件（Clash Verge 等），它们会抢路由和 DNS。
+需要 macOS 13 或更新，Apple 芯片和 Intel 都支持。请不要同时运行其他会开 TUN 的代理软件（Clash Verge 等），它们会抢路由和 DNS。Tailscale 可以一起用：不要启用它的 exit node，管理后台的 DNS 页也不要开「Override DNS servers」（MagicDNS 可以保留）。
 
 ## 遇到问题
 

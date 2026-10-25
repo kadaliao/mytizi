@@ -168,6 +168,7 @@ public enum DiagnosticsAnalyzer {
                 severity: .problem, title: "检测到另一个 TUN 在使用同一地址段",
                 detail: "\(list)。两个代理同时开 TUN 会互相抢路由和 DNS，请关闭另一个。"))
         }
+        result += egressFindings(input)
         result += dnsFindings(input)
         if input.settings.disableIPv6, !facts.globalIPv6Interfaces.isEmpty {
             result.append(Finding(
@@ -187,12 +188,48 @@ public enum DiagnosticsAnalyzer {
         return result
     }
 
+    /// 另一个 VPN 把自己的 utun 排到了默认路由第一位（典型：Tailscale 开了 exit node）。
+    /// 本 App 的 TUN 路由比默认路由更具体，应用流量仍会进本 App；真正的风险是核心的出站被它接走，
+    /// 这由出口固定（interface-name）挡住——所以固定成功时只是提醒，没固定成功才是问题。
+    static func egressFindings(_ input: DiagnosticsInput) -> [Finding] {
+        let facts = input.facts
+        guard let first = facts.defaultRoutes.first, first.interface.hasPrefix("utun"),
+              first.interface != input.helperStatus?.tunInterface
+        else { return [] }
+        let addresses = facts.tunInterfaces.first { $0.name == first.interface }?.addresses ?? []
+        let isTailscale = addresses.contains(where: isCGNAT)
+        let pinned = input.helperStatus?.egressInterface
+        let who = isTailscale ? "Tailscale 的出口节点（exit node）" : "另一个 VPN（\(first.interface)）"
+        let effect = pinned.map { "本 App 已把核心出口固定在 \($0)，代理流量不会被它接走" }
+            ?? "本 App 没能确定物理出口，核心的出站（包括连节点）可能全部经它转发"
+        let advice = isTailscale ? "建议在 Tailscale 菜单里关闭 exit node，两者各管各的流量。" : "建议关闭该 VPN 的全局接管模式。"
+        return [Finding(
+            severity: pinned == nil ? .problem : .warning,
+            title: "\(who)正在接管默认路由",
+            detail: "默认路由第一位是 \(first.interface)\(addresses.isEmpty ? "" : "（\(addresses.joined(separator: ", "))）")。\(effect)；\(advice)")]
+    }
+
+    /// 100.64.0.0/10（CGNAT）：Tailscale 给每台设备分配的地址段。
+    static func isCGNAT(_ address: String) -> Bool {
+        let parts = address.split(separator: ".").compactMap { Int($0) }
+        return parts.count == 4 && parts[0] == 100 && (64...127).contains(parts[1])
+    }
+
+    static let tailscaleDNS = "100.100.100.100"
+
     static func dnsFindings(_ input: DiagnosticsInput) -> [Finding] {
         guard input.settings.takeOverDNS else { return [] }
         let facts = input.facts
         let primary = facts.dnsResolvers.first { !$0.scoped && $0.domain == nil }
             ?? facts.dnsResolvers.first { !$0.scoped }
         guard let primary, primary.nameservers.first != AppInfo.tunDNS else { return [] }
+        if primary.nameservers.first == tailscaleDNS {
+            return [Finding(
+                severity: .problem, title: "Tailscale 覆盖了系统 DNS",
+                detail: "当前主 DNS 是 \(tailscaleDNS)（Tailscale），它的优先级高于本 App 设置的 \(AppInfo.tunDNS)，"
+                    + "DNS 查询不经过 mihomo，fake-ip 和域名规则会失效。请在 Tailscale 管理后台的 DNS 页关闭「Override DNS servers」"
+                    + "（MagicDNS 可以保留，它只接管 ts.net 域名），或在 Tailscale 菜单里取消「Use Tailscale DNS settings」。")]
+        }
         return [Finding(
             severity: .problem, title: "系统 DNS 没有指向 TUN",
             detail: "当前主 DNS 是 \(primary.nameservers.joined(separator: ", "))，应为 \(AppInfo.tunDNS)。"

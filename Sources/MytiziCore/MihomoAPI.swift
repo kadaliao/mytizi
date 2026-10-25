@@ -65,6 +65,18 @@ public struct ConnectionsSnapshot: Decodable {
     public var connections: [ConnectionInfo]
 }
 
+/// `GET /configs` 里本 App 关心的几项。
+public struct GeneralConfig: Decodable {
+    public var mode: String?
+    /// 出站绑定的网卡；空字符串表示由核心自动检测。
+    public var interfaceName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case mode
+        case interfaceName = "interface-name"
+    }
+}
+
 /// mihomo 控制接口（external-controller）的最小客户端，只用到 App 需要的那几个接口。
 public struct MihomoAPI {
     public let port: Int
@@ -124,6 +136,10 @@ public struct MihomoAPI {
 
     public func connections() async throws -> ConnectionsSnapshot {
         try await send("GET", "/connections", as: ConnectionsSnapshot.self)
+    }
+
+    public func general() async throws -> GeneralConfig {
+        try await send("GET", "/configs", as: GeneralConfig.self)
     }
 
     /// 网络切换/唤醒后清掉走旧出口的连接，让应用按新的网络重连。

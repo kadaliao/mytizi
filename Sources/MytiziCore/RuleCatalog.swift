@@ -122,6 +122,10 @@ public enum RuleCatalog {
         "192.168.0.0/16", "100.64.0.0/10", "224.0.0.0/4",
     ]
 
+    /// 不进 TUN 的地址段（`tun.route-exclude-address`）：Tailscale 等 VPN 的 CGNAT 段由它们自己的 utun 负责。
+    /// 上面的规则里虽然也有同段 DIRECT，但 DIRECT 走的是物理网卡，包不会交给对方的 utun；路由层排除才是对的。
+    public static let tunRouteExclude: [String] = ["100.64.0.0/10"]
+
     // MARK: DNS 相关
 
     /// 这些域名不使用 fake-ip：时间同步、STUN、连通性检测、本地域名需要真实地址。
@@ -131,6 +135,9 @@ public enum RuleCatalog {
         "stun.*.*", "stun.*.*.*", "+.stun.*.*", "+.stun.*.*.*",
         "+.msftconnecttest.com", "+.msftncsi.com", "captive.apple.com", "+.captive.apple.com",
         "+.srv.nintendo.net", "+.stun.playstation.net", "xbox.*.microsoft.com", "+.xboxlive.com",
+        // Tailscale 把自己的 socket 绑在物理网卡上（IP_BOUND_IF），拿到 fake-ip 会直接发给网关然后黑洞，
+        // 登录、DERP 中继和重连都会变慢。给真实地址，它从物理网卡直连即可。
+        "+.tailscale.com", "+.tailscale.io", "+.ts.net",
     ]
 
     /// 嗅探器不改写目标地址的域名。微信按 HTTPDNS 给出的 IP 直连，SNI/Host 只是占位，

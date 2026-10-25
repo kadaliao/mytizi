@@ -1,5 +1,6 @@
 import Foundation
 import MytiziKit
+import Network
 
 /// helper 用到的所有路径。默认是系统位置，测试时注入临时目录。
 public struct HelperPaths {
@@ -32,12 +33,15 @@ public struct HelperPaths {
 /// 三条原则：
 ///   1. 核心进程与网络改动同生共死：核心退出（正常、崩溃、被杀）都会立刻恢复 DNS/IPv6；
 ///   2. 停止时先恢复 DNS 再杀核心，应用不会在中间窗口里解析到一个已经没人应答的地址；
-///   3. 所有对外状态都来自本对象，App 看到的"已连接"一定意味着 TUN 网卡真的存在。
+///   3. 所有对外状态都来自本对象，App 看到的"已连接"一定意味着 TUN 网卡真的存在；
+///   4. 核心的出站网卡固定在物理默认网卡上（见 RoutingTable），其他 VPN 抢了默认路由也抢不走代理流量。
 public final class CoreSupervisor {
     private let paths: HelperPaths
     private let network: NetworkGuard
     private let log: RotatingLog
     private let coreLog: RotatingLog
+    /// 返回当前的物理出口网卡；测试时注入。
+    private let egressDetector: () -> String?
 
     /// 串行化 start / stop / updateFiles / reconcile。
     private let operation = NSLock()
@@ -52,15 +56,21 @@ public final class CoreSupervisor {
     private var controllerPort: Int?
     private var controllerSecret: String?
     private var tunInterface: String?
+    private var egressInterface: String?
     private var lastExit: CoreExit?
     private var activeParams: StartParams?
     private var reconcileTimer: DispatchSourceTimer?
+    private var pathMonitor: NWPathMonitor?
 
-    public init(paths: HelperPaths, network: NetworkGuard, log: RotatingLog, coreLog: RotatingLog) {
+    public init(
+        paths: HelperPaths, network: NetworkGuard, log: RotatingLog, coreLog: RotatingLog,
+        egressDetector: @escaping () -> String? = { RoutingTable.physicalEgress() }
+    ) {
         self.paths = paths
         self.network = network
         self.log = log
         self.coreLog = coreLog
+        self.egressDetector = egressDetector
     }
 
     // MARK: 状态
@@ -72,7 +82,7 @@ public final class CoreSupervisor {
             phase: phase, corePID: process.flatMap { $0.isRunning ? $0.processIdentifier : nil },
             startedAt: startedAt, controllerPort: controllerPort,
             controllerSecret: running ? controllerSecret : nil, tunInterface: tunInterface,
-            changes: network.currentSummary(), lastExit: lastExit)
+            egressInterface: egressInterface, changes: network.currentSummary(), lastExit: lastExit)
     }
 
     public var coreInstalled: Bool { FileManager.default.isExecutableFile(atPath: paths.coreBinary) }
@@ -106,6 +116,7 @@ public final class CoreSupervisor {
         stateLock.lock()
         lastExit = nil
         tunInterface = nil
+        egressInterface = nil
         stateLock.unlock()
 
         do {
@@ -148,6 +159,9 @@ public final class CoreSupervisor {
             }
         }
 
+        // 出口固定：配置里写的是 App 生成配置那一刻的物理出口，这里按当前路由表再核对一次。
+        let egress = pinEgress(current: params.egressInterface, port: params.controllerPort, secret: params.controllerSecret)
+
         if params.takeOverDNS || params.disableIPv6 {
             do {
                 try network.apply(takeOverDNS: params.takeOverDNS, disableIPv6: params.disableIPv6)
@@ -164,10 +178,11 @@ public final class CoreSupervisor {
         controllerPort = params.controllerPort
         controllerSecret = params.controllerSecret
         tunInterface = tun
+        egressInterface = egress
         activeParams = params
         stateLock.unlock()
         startReconcileTimer()
-        log.line("已连接（核心 pid \(process?.processIdentifier ?? 0)，TUN \(tun ?? "无")）")
+        log.line("已连接（核心 pid \(process?.processIdentifier ?? 0)，TUN \(tun ?? "无")，出口 \(egress ?? "自动")）")
         return HelperResponse(ok: true, status: status())
     }
 
@@ -277,6 +292,7 @@ public final class CoreSupervisor {
         controllerSecret = nil
         controllerPort = nil
         tunInterface = nil
+        egressInterface = nil
         startedAt = nil
         activeParams = nil
         stateLock.unlock()
@@ -338,9 +354,33 @@ public final class CoreSupervisor {
     }
 
     static func controllerResponds(port: Int, secret: String) -> Bool {
-        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/version")!)
+        controllerRequest(port: port, secret: secret, method: "GET", path: "/version", timeout: 1) == 200
+    }
+
+    /// `PATCH /configs`：核心运行中改 interface-name 等通用项。成功返回 204。
+    static func patchGeneral(port: Int, secret: String, values: [String: String]) -> Bool {
+        let body = try? JSONSerialization.data(withJSONObject: values)
+        let status = controllerRequest(port: port, secret: secret, method: "PATCH", path: "/configs", body: body, timeout: 3)
+        return (200..<300).contains(status)
+    }
+
+    /// 清掉所有连接：出口换了之后，绑在旧网卡上的连接都已失效，让应用立刻重连。
+    static func closeConnections(port: Int, secret: String) {
+        _ = controllerRequest(port: port, secret: secret, method: "DELETE", path: "/connections", timeout: 3)
+    }
+
+    /// 同步地向控制接口发一个请求，返回 HTTP 状态码（失败为 0）。
+    private static func controllerRequest(
+        port: Int, secret: String, method: String, path: String, body: Data? = nil, timeout: TimeInterval
+    ) -> Int {
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)\(path)")!)
+        request.httpMethod = method
         request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 1
+        if let body {
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        request.timeoutInterval = timeout
         let configuration = URLSessionConfiguration.ephemeral
         configuration.connectionProxyDictionary = [:]
         let session = URLSession(configuration: configuration)
@@ -351,8 +391,8 @@ public final class CoreSupervisor {
             status = (response as? HTTPURLResponse)?.statusCode ?? 0
             done.signal()
         }.resume()
-        _ = done.wait(timeout: .now() + 2)
-        return status == 200
+        _ = done.wait(timeout: .now() + timeout + 1)
+        return status
     }
 
     private func waitForInterface(address: String, generation gen: Int, timeout: TimeInterval) -> String? {
@@ -384,10 +424,48 @@ public final class CoreSupervisor {
         return nil
     }
 
+    // MARK: 出口网卡
+
+    /// 核对出口：路由表里的物理默认网卡与核心当前绑定的不一致时，通过控制接口改过去，并清掉旧连接。
+    /// 返回之后生效的出口。暂时没有默认路由（离线、切换中）时不动，避免在过渡期来回抖动。
+    private func pinEgress(current: String?, port: Int, secret: String) -> String? {
+        guard let detected = egressDetector() else { return current }
+        guard detected != current else { return current }
+        guard Self.patchGeneral(port: port, secret: secret, values: ["interface-name": detected]) else {
+            log.line("设置出口网卡 \(detected) 失败，保持 \(current ?? "自动检测")")
+            return current
+        }
+        log.line("出口网卡：\(current ?? "自动检测") → \(detected)")
+        if current != nil { Self.closeConnections(port: port, secret: secret) }
+        return detected
+    }
+
+    /// 网络变化时（NWPathMonitor 回调）与定时器都走这里；start/stop 正在进行时跳过，下一次再核对。
+    public func reconcileEgress() {
+        guard operation.`try`() else { return }
+        defer { operation.unlock() }
+        reconcileEgressLocked()
+    }
+
+    private func reconcileEgressLocked() {
+        stateLock.lock()
+        let running = phase == .running
+        let current = egressInterface
+        let port = controllerPort
+        let secret = controllerSecret
+        stateLock.unlock()
+        guard running, let port, let secret else { return }
+        let updated = pinEgress(current: current, port: port, secret: secret)
+        stateLock.lock()
+        if phase == .running { egressInterface = updated }
+        stateLock.unlock()
+    }
+
     // MARK: 周期性接管新网卡
 
     /// 连接期间插上 USB 网卡或切换到新的网络服务时，它们的 DNS 不会自动指向 TUN，
-    /// 这里每 20 秒补一次（NetworkGuard 对已记录的服务是幂等的）。
+    /// 这里每 20 秒补一次（NetworkGuard 对已记录的服务是幂等的），顺带核对出口网卡；
+    /// 网络路径一变化（NWPathMonitor）也立刻核对出口，不用等定时器。
     private func startReconcileTimer() {
         stopReconcileTimer()
         let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
@@ -395,6 +473,7 @@ public final class CoreSupervisor {
         timer.setEventHandler { [weak self] in
             guard let self, self.operation.`try`() else { return }
             defer { self.operation.unlock() }
+            self.reconcileEgressLocked()
             self.stateLock.lock()
             let params = self.activeParams
             let running = self.phase == .running
@@ -407,14 +486,23 @@ public final class CoreSupervisor {
             }
         }
         timer.resume()
-        stateLock.lock(); reconcileTimer = timer; stateLock.unlock()
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] _ in self?.reconcileEgress() }
+        monitor.start(queue: .global(qos: .utility))
+        stateLock.lock()
+        reconcileTimer = timer
+        pathMonitor = monitor
+        stateLock.unlock()
     }
 
     private func stopReconcileTimer() {
         stateLock.lock()
         let timer = reconcileTimer
+        let monitor = pathMonitor
         reconcileTimer = nil
+        pathMonitor = nil
         stateLock.unlock()
         timer?.cancel()
+        monitor?.cancel()
     }
 }

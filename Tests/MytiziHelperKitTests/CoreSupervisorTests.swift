@@ -15,6 +15,9 @@ final class CoreSupervisorTests: XCTestCase {
     var supervisor: CoreSupervisor!
     var paths: HelperPaths!
     var coreLog: RotatingLog!
+    /// 模拟的路由表结论：nil 表示没有默认路由。
+    final class EgressBox { var name: String? }
+    var egress = EgressBox()
 
     override func setUpWithError() throws {
         #if arch(arm64)
@@ -40,7 +43,8 @@ final class CoreSupervisorTests: XCTestCase {
         let log = RotatingLog(path: paths.helperLog)
         coreLog = RotatingLog(path: paths.coreLog)
         let guardian = NetworkGuard(statePath: paths.networkState, runner: machine)
-        supervisor = CoreSupervisor(paths: paths, network: guardian, log: log, coreLog: coreLog)
+        let box = egress
+        supervisor = CoreSupervisor(paths: paths, network: guardian, log: log, coreLog: coreLog, egressDetector: { box.name })
     }
 
     override func tearDown() {
@@ -83,6 +87,43 @@ final class CoreSupervisorTests: XCTestCase {
         XCTAssertEqual(machine.service("Wi-Fi").v6.mode, .automatic)
         XCTAssertFalse(FileManager.default.fileExists(atPath: paths.networkState))
         XCTAssertNil(supervisor.status().corePID)
+    }
+
+    func testEgressFollowsThePhysicalDefaultRoute() async throws {
+        egress.name = "en0"
+        let start = params()
+        XCTAssertTrue(supervisor.start(start).ok)
+        XCTAssertEqual(supervisor.status().egressInterface, "en0")
+        let api = MihomoAPI(port: start.controllerPort, secret: start.controllerSecret)
+        var general = try await api.general()
+        XCTAssertEqual(general.interfaceName, "en0", "配置里没写出口时，启动后立刻钉到物理默认网卡")
+        XCTAssertTrue(helperLog().contains("出口网卡：自动检测 → en0"), helperLog())
+
+        egress.name = "en1"
+        supervisor.reconcileEgress()
+        XCTAssertEqual(supervisor.status().egressInterface, "en1")
+        general = try await api.general()
+        XCTAssertEqual(general.interfaceName, "en1", "默认路由换到别的网卡后通过控制接口跟过去")
+
+        egress.name = nil
+        supervisor.reconcileEgress()
+        XCTAssertEqual(supervisor.status().egressInterface, "en1", "暂时没有默认路由（离线）时保持原值")
+
+        _ = supervisor.stop()
+        XCTAssertNil(supervisor.status().egressInterface)
+    }
+
+    func testEgressFromTheAppIsKeptWhenItMatchesTheRoutingTable() throws {
+        egress.name = "en0"
+        var start = params()
+        start.egressInterface = "en0"
+        XCTAssertTrue(supervisor.start(start).ok)
+        XCTAssertEqual(supervisor.status().egressInterface, "en0")
+        XCTAssertFalse(helperLog().contains("出口网卡："), "一致时不需要改配置")
+    }
+
+    private func helperLog() -> String {
+        (try? String(contentsOfFile: paths.helperLog, encoding: .utf8)) ?? ""
     }
 
     func testDNSIsRestoredBeforeTheCoreIsKilled() throws {

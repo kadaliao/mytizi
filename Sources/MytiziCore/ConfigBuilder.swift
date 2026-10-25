@@ -15,12 +15,15 @@ public struct ConfigOptions {
     public var healthCheckURL: String
     /// 原网络的本地 DNS（路由器），只用于 .lan 之类的本地域名。
     public var localDNS: [String]
+    /// 固定的出口网卡（物理默认网卡，如 en0）。nil 时由核心自动检测——但自动检测会被开了 exit node 的
+    /// Tailscale 之类的 VPN 抢走（它们的 utun 会排到默认路由第一位），所以 App 总是尽量填上它。
+    public var egressInterface: String?
 
     public init(
         controllerPort: Int, controllerSecret: String, mixedPort: Int? = nil, tun: Bool = true,
         providerPath: String = ConfigBuilder.providerPath, directHosts: [String] = [],
         customRules: [String] = [], healthCheckURL: String = ConfigBuilder.defaultHealthCheckURL,
-        localDNS: [String] = []
+        localDNS: [String] = [], egressInterface: String? = nil
     ) {
         self.controllerPort = controllerPort
         self.controllerSecret = controllerSecret
@@ -31,6 +34,7 @@ public struct ConfigOptions {
         self.customRules = customRules
         self.healthCheckURL = healthCheckURL
         self.localDNS = localDNS
+        self.egressInterface = egressInterface
     }
 }
 
@@ -73,6 +77,11 @@ public enum ConfigBuilder {
         if let port = options.mixedPort {
             top.insert(("mixed-port", .int(port)), at: 0)
         }
+        // 出站绑定到物理网卡。核心里显式的 interface-name 优先于 tun.auto-detect-interface，
+        // 后者只在这里为空时才生效（作为没拿到路由表时的兜底）。helper 会随网络变化更新它。
+        if let egress = options.egressInterface, !egress.isEmpty {
+            top.append(("interface-name", .string(egress)))
+        }
 
         top.append(("tun", tun(options)))
         top.append(("dns", dns(options)))
@@ -108,6 +117,9 @@ public enum ConfigBuilder {
             ("auto-detect-interface", true),
             ("strict-route", false),
             ("inet4-address", .strings(["\(AppInfo.tunGateway)/30"])),
+            // 别的 VPN 自己负责的地址段（Tailscale 的 100.64.0.0/10）在路由层就不进 TUN，
+            // 否则 DIRECT 会把包从物理网卡发出去，而不是交给对方的 utun。
+            ("route-exclude-address", .strings(RuleCatalog.tunRouteExclude)),
             ("dns-hijack", .strings(["any:53", "tcp://any:53"])),
         ])
     }

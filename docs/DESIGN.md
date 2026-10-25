@@ -27,6 +27,7 @@
 | 订阅由谁下载 | **App 下载**，mihomo 只读本地文件 | 能给出"链接失效/拿到网页/服务器拒绝"这类人话错误；能离线用缓存；避免连接时"先有鸡还是先有蛋"。 |
 | DNS | `fake-ip` + TUN `dns-hijack` + **系统 DNS 指向 198.18.0.2** | 路由器 DNS 在同一网段（on-link），包不会进 TUN，必须改系统 DNS 才能保证域名规则生效。`.2` 是 mihomo fake-ip 池保留地址，不会被分配。 |
 | IPv6 | 核心 `ipv6:false`、DNS 不返回 AAAA、**helper 在系统层关闭**（带恢复） | TUN 只接管 IPv4，应用拿到 IPv6 地址会直接绕过规则（真实案例：twimg.com 解析到 IPv6 地址后绕过 TUN，连接被重置）。 |
+| 与 Tailscale 等 VPN 共存 | 核心出站网卡**固定在物理默认网卡**（`interface-name`，helper 随路由表更新）；`100.64.0.0/10` 在路由层排除；Tailscale 域名不用 fake-ip | mihomo 在 macOS 上只加 1/8…128/1 子网路由，不动默认路由；别的 VPN 一开 exit node 就会把自己的 utun 排到默认路由第一位，而 `auto-detect-interface` 取的正是它，代理流量会整个被接走。Tailscale 自己把 socket 绑在物理网卡上，拿到 fake-ip 会发到网关黑洞。 |
 | 地理库 | `geoip.metadb` + `geosite.dat` **随 App 内置**，`geo-auto-update:false` | 核心首次启动联网下载会卡住/失败；用户在国内最需要它的时候恰恰下不到。 |
 | 配置格式 | 自己的小型 YAML 输出器，所有字符串加引号 | 配置只写不读，不引入 YAML 库；避免 `no`/`on`/`+.lan` 被当成别的类型。 |
 | 工程形态 | SwiftPM（无 xcodeproj）+ 脚本拼装 `.app` | 不需要维护 xcodeproj，命令行即可构建/测试/打包。 |
@@ -97,6 +98,8 @@ com.mytizi.helper（root LaunchDaemon，KeepAlive）
 4. 恢复全部成功才删除恢复点，否则保留，下次 helper 启动继续重试。
 
 触发恢复的时机：用户断开、核心**非预期退出**（立即）、helper 收到 SIGTERM（关机/卸载）、helper 启动时发现遗留恢复点（崩溃/断电后）。停止时先还原 DNS 再杀核心，避免应用解析到已无人应答的地址。连接期间每 20 秒补接管新插入的网卡（幂等，已记录的服务不会被二次快照覆盖）。
+
+**出口固定**（`RoutingTable` + `CoreSupervisor.pinEgress`）：App 生成配置时从 `netstat -rn` 取第一条挂在 `enN/bridgeN` 上的默认路由写进 `interface-name`；helper 启动后再核对一次，之后由 `NWPathMonitor` 回调与 20 秒定时器持续核对，变了就 `PATCH /configs` 并清掉旧连接。暂时没有默认路由（离线、切换中）时不动，避免抖动。诊断报告会单独指出“另一个 VPN 接管了默认路由”（出口已固定时只是提醒）和“Tailscale 覆盖了系统 DNS”。
 
 ## 6. 安全模型
 
