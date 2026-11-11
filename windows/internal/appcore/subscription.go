@@ -3,6 +3,7 @@ package appcore
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/kadaliao/mytizi/windows/internal/config"
@@ -268,8 +269,10 @@ func (c *Core) checkForUpdatesIfDue() {
 	c.checkForUpdates(false)
 }
 
+// releaseBuild：dev 与 0.0.0-*（CI 构建）不参与版本检查。
 func (c *Core) releaseBuild() bool {
-	return c.d.CheckUpdate != nil && c.d.IsNewer != nil && c.d.Version != "" && c.d.Version != "dev"
+	v := c.d.Version
+	return c.d.CheckUpdate != nil && c.d.IsNewer != nil && v != "" && v != "dev" && !strings.HasPrefix(v, "0.0.0")
 }
 
 // CheckUpdates 是手动检查。
@@ -324,7 +327,8 @@ func (c *Core) checkForUpdates(manual bool) {
 	switch {
 	case manual:
 		c.ShowNotice("发现新版本 v"+info.Version, 6*time.Second)
-	case isNewDiscovery && !skipped:
+	case isNewDiscovery && !skipped && c.State().Phase != PhaseNeedsSubscription:
+		// 引导页没有底栏，"点右下角下载"无从点起；添加订阅后底栏会显示新版本入口。
 		c.ShowNotice("发现新版本 v"+info.Version+"，点右下角下载", 8*time.Second)
 	}
 }

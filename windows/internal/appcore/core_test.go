@@ -517,7 +517,10 @@ func TestFormatting(t *testing.T) {
 	if got := Bytes(43003150336); got != "40.05 GB" {
 		t.Errorf("Bytes = %s", got)
 	}
-	if got := Bytes(199990000000); got != "186.3 GB" {
+	if got := Bytes(199990000000); got != "186.26 GB" {
+		t.Errorf("Bytes = %s", got)
+	}
+	if got := Bytes(5 << 20); got != "5.0 MB" {
 		t.Errorf("Bytes = %s", got)
 	}
 	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.Local)

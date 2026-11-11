@@ -84,9 +84,17 @@ jobs:
           if-no-files-found: error
 
   e2e:
-    name: 端到端测试（真实安装 + TUN）
+    name: 端到端测试（${{ matrix.arch }}，真实安装 + TUN）
     needs: build
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+          - arch: arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     defaults:
       run:
@@ -104,7 +112,7 @@ jobs:
           path: windows/dist
       - name: 静默安装
         run: |
-          $setup = Get-ChildItem dist\*-windows-x64-setup.exe | Select-Object -First 1
+          $setup = Get-ChildItem dist\*-windows-${{ matrix.arch }}-setup.exe | Select-Object -First 1
           $p = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "安装程序退出码 $($p.ExitCode)" }
           sc.exe query MyTiziHelper
@@ -128,7 +136,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: e2e-screens-and-logs
+          name: e2e-${{ matrix.arch }}-screens-and-logs
           path: |
             ${{ runner.temp }}/screens
             ${{ runner.temp }}/logs

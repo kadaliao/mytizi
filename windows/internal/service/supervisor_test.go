@@ -49,9 +49,11 @@ func newSupervisor(t *testing.T) (*Supervisor, *countingPlatform, paths.System) 
 
 	sys := paths.SystemAt(t.TempDir())
 	platform := &countingPlatform{}
+	log, coreLog := rotlog.New(sys.HelperLog(), 0, 0), rotlog.New(sys.CoreLog(), 0, 0)
+	// 清理按注册的逆序执行：先停核心，再关日志，最后删临时目录（Windows 删不掉打开着的文件）。
+	t.Cleanup(func() { log.Close(); coreLog.Close() })
 	s := New(Options{
-		System: sys, Components: components, TUN: false, Platform: platform,
-		Log: rotlog.New(sys.HelperLog(), 0, 0), CoreLog: rotlog.New(sys.CoreLog(), 0, 0),
+		System: sys, Components: components, TUN: false, Platform: platform, Log: log, CoreLog: coreLog,
 	})
 	t.Cleanup(s.Shutdown)
 	return s, platform, sys

@@ -23,10 +23,15 @@ func Bytes(n int64) string {
 			break
 		}
 	}
-	if value >= 100 {
+	// 与 macOS 的 ByteCountFormatter 一致：KB 取整，MB 一位小数，GB 及以上两位小数。
+	switch unit {
+	case "KB":
+		return fmt.Sprintf("%.0f %s", value, unit)
+	case "MB":
 		return fmt.Sprintf("%.1f %s", value, unit)
+	default:
+		return fmt.Sprintf("%.2f %s", value, unit)
 	}
-	return fmt.Sprintf("%.2f %s", value, unit)
 }
 
 // DateText 输出"2027年1月18日"。

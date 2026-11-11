@@ -44,9 +44,11 @@ func TestIntegrationAddConnectRefreshDisconnect(t *testing.T) {
 		}
 	}
 	sys := paths.SystemAt(t.TempDir())
+	log, coreLog := rotlog.New(sys.HelperLog(), 0, 0), rotlog.New(sys.CoreLog(), 0, 0)
+	t.Cleanup(func() { log.Close(); coreLog.Close() })
 	supervisor := service.New(service.Options{
 		System: sys, Components: components, TUN: false, Platform: service.DefaultPlatform{},
-		Log: rotlog.New(sys.HelperLog(), 0, 0), CoreLog: rotlog.New(sys.CoreLog(), 0, 0),
+		Log: log, CoreLog: coreLog,
 	})
 	t.Cleanup(supervisor.Shutdown)
 	socketDir, _ := os.MkdirTemp("", "mti")

@@ -63,5 +63,5 @@ func verifyPipeOwner(conn net.Conn) error {
 
 func isNotRunning(err error) bool {
 	return errors.Is(err, windows.ERROR_FILE_NOT_FOUND) || errors.Is(err, winio.ErrTimeout) ||
-		errors.Is(err, context.DeadlineExceeded)
+		errors.Is(err, context.DeadlineExceeded) || errors.Is(err, windows.WSAECONNREFUSED)
 }
