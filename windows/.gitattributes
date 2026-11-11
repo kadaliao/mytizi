@@ -1,0 +1,4 @@
+# Windows 上 git 默认把换行转成 CRLF，gofmt 会把每个 Go 文件都报成"未格式化"。
+*.go text eol=lf
+go.mod text eol=lf
+go.sum text eol=lf

@@ -166,3 +166,29 @@ core.lock           固定的 mihomo 版本与 SHA-256
 - 自启动与开机自动连接（`SMAppService`）、可原地替换的签名更新（目前只检测新版本并打开下载页）；
 - 订阅里的规则可选启用；多订阅；
 - 「线路」自动故障转移的更多反馈（目前由 `url-test` 负责）。
+
+## 11. Windows 版
+
+代码在 `windows/`（Go），开发与打包说明见 [windows/README.md](../windows/README.md)。产品形态、规则阶梯、诊断报告结构与 macOS 版相同；下面只记录 Windows 上不同的地方和理由。
+
+| 决策 | 选择 | 理由 |
+| --- | --- | --- |
+| 语言与界面 | Go + Wails v3（WebView2），界面是纯 HTML/CSS/JS | SwiftUI 不能在 Windows 上用；Go 能在 macOS/Linux 上交叉编译出 Windows 程序（不需要 cgo），App、服务、诊断共用一套代码；Wails v3 自带托盘与单实例。 |
+| 特权组件 | Windows 服务 `MyTiziHelper`（LocalSystem，自动启动，没连接时空闲），由安装程序注册 | 对应 macOS 的 LaunchDaemon。安装时授权一次，之后 App 以普通用户身份运行、不再弹 UAC。服务没装好时 App 提供"修复后台组件"（弹一次 UAC 运行 `mytizi-service.exe install`）；服务被停止时 App 无需授权即可拉起（服务 DACL 给本机登录用户开了启动权限）。 |
+| IPC | 命名管道 `\\.\pipe\MyTizi.Helper`，按行 JSON 一问一答 | 管道 DACL：SYSTEM/管理员完全控制，本机登录用户（IU）读写；客户端连接后核对管道属主必须是 SYSTEM/管理员，防止服务不在时被别的程序抢注同名管道骗取订阅。 |
+| 谁生成配置 | **服务**生成；App 只发订阅原文 + 几项设置（直连主机、本地 DNS、自定义规则、测速地址、strict-route），服务逐项校验 | 核心以 SYSTEM 身份运行，能任意改配置就等于能借它读写文件（`external-ui` 之类）。Go 两端共用 `config` 包，App 侧只留一份脱敏副本。 |
+| DNS 与 IPv6 | 不改系统设置，改用 mihomo 的 `tun.strict-route` | strict-route 在 Windows 上把 TUN 网卡的 DNS 设为 198.18.0.2、跃点数设为 0，并用 **WFP 动态会话**拦掉其他网卡上的 53 端口与全部 IPv6 出站。动态会话随 mihomo 进程关闭自动消失，所以没有恢复点、没有"崩溃后断网"，macOS 版的 NetworkGuard 在这里不需要。可在高级设置里关闭（"严格接管"）。 |
+| TUN 协议栈 | `gvisor` | `system`/`mixed` 栈在 Windows 上会往防火墙里写一条永久入站规则，卸载后也留着。 |
+| 出口网卡 | 不写 `interface-name`，交给 `auto-detect-interface` | Windows 上它按"跃点最小的默认路由"选网卡，并跳过 Wintun 这类虚拟网卡（Tailscale 也是 Wintun），exit node 抢不走核心出站。TAP 型 VPN 抢默认路由时诊断会指出。 |
+| Windows 独有直连 | `msftconnecttest.com`、`msftncsi.com` | 系统联网检测走代理时，节点一挂任务栏就显示"无 Internet"，商店、Outlook 跟着拒绝联网。 |
+| Tailscale | 检测到 Tailscale 网卡时，`+.ts.net` 交给 100.100.100.100 解析 | strict-route 会拦掉系统发往 Tailscale 网卡的 DNS（NRPT 规则），只有核心自己去问 MagicDNS 才问得到。 |
+| 核心的生死 | 核心放进"句柄关闭即结束"的作业对象 | 服务崩溃或被强杀时核心一起结束，网卡与 WFP 规则随之消失；服务管理器 2 秒后重启服务。 |
+| 系统目录 | `%ProgramData%\MyTizi`，服务启动时强制 DACL；所有者不是 SYSTEM/管理员或是联接点的目录先挪走再重建 | 普通用户可以在 ProgramData 下抢先建目录，SYSTEM 往里写日志就等于替他写任意文件。`core-home` 只有 SYSTEM/管理员可读（配置里有控制密钥），日志目录普通用户可读。 |
+| 断开后 | 服务清空系统 DNS 缓存 | 连接期间缓存的都是 198.18.x.x 的 fake-ip。 |
+| 分发 | NSIS 安装包，每个架构一个（x64 / arm64），没有代码签名 | Wintun 驱动必须与系统架构一致。缺 WebView2 运行时的机器由安装程序静默补装。首次运行会被 SmartScreen 拦一下。 |
+
+**验证状态**
+
+- 自动化（`cd windows && go test ./...`，macOS 与 Windows CI 都跑）：配置经真实 mihomo `-t`；规则清单与 macOS 版逐项一致；订阅抓取与解析（真实 mihomo）；服务的进程管理（启停、重启换进程、核心被杀判为崩溃、非法参数进不了核心、刷新订阅不重启）；状态机（假服务 + 假控制接口）；以及除 TUN 外全部用真实组件的集成测试（服务 + IPC + 订阅 + 诊断）。
+- 端到端（CI 的全新 Windows 虚拟机，`windows/e2e`）：静默安装 → 服务与目录权限 → 真实 Wintun 网卡 → 系统 DNS 返回 fake-ip、直发 8.8.8.8:53 被劫持 → 国内直连、海外经本机测试节点（对照核心日志）→ `--diagnose` 自检 → 核心被杀后网络恢复 → 服务被强杀时核心随之结束且服务自动重启 → 断开复原 → 界面截图 → 卸载后服务、文件、网卡、ProgramData 全部清理。
+- 还没有人工真机试过：家用 Windows 上的睡眠唤醒、Wi-Fi/有线切换、与 Tailscale 共存、杀毒软件误报、中文系统下 `route print` 的解析、ARM 版 Windows。见 [TESTING.md](TESTING.md) 的 Windows 部分。

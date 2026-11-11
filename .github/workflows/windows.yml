@@ -1,0 +1,172 @@
+# Windows 版：单元测试（Windows 上跑）→ 交叉编译安装包（Linux 上跑）→ 在 Windows 虚拟机上安装并做端到端测试。
+# 推送 v* 标签时，另外把安装包附加到同名的 GitHub Release（Release 需要已经存在）。
+name: Windows
+
+on:
+  push:
+    branches: [main, windows]
+    tags: ["v*"]
+    paths:
+      - "windows/**"
+      - "core.lock"
+      - "Sources/MytiziCore/RuleCatalog.swift"
+      - ".github/workflows/windows.yml"
+  pull_request:
+    paths:
+      - "windows/**"
+      - "core.lock"
+      - "Sources/MytiziCore/RuleCatalog.swift"
+      - ".github/workflows/windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.27.x"
+
+jobs:
+  test:
+    name: 单元测试（Windows）
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: windows
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: windows/go.sum
+      - name: 下载内置核心
+        run: go run ./tools/fetchcore
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: 检查格式与 vet
+        shell: bash
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+          go vet -composites=false ./...
+          go vet -composites=false -tags e2e ./e2e/
+      - name: 测试
+        run: go test -count=1 ./...
+
+  build:
+    name: 构建安装包
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: windows/go.sum
+      - name: 安装 NSIS
+        run: sudo apt-get update && sudo apt-get install -y nsis
+      - id: version
+        name: 版本号
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then v="${GITHUB_REF_NAME#v}"; else v="0.0.0-ci.${GITHUB_RUN_NUMBER}"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - name: 构建
+        working-directory: windows
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: scripts/build.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-installers
+          path: |
+            windows/dist/*.exe
+            windows/dist/SHA256SUMS-windows.txt
+          if-no-files-found: error
+
+  e2e:
+    name: 端到端测试（${{ matrix.arch }}，真实安装 + TUN）
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+          - arch: arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: windows
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: windows/go.sum
+      - uses: actions/download-artifact@v8
+        with:
+          name: windows-installers
+          path: windows/dist
+      - name: 静默安装
+        run: |
+          $setup = Get-ChildItem dist\*-windows-${{ matrix.arch }}-setup.exe | Select-Object -First 1
+          $p = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "安装程序退出码 $($p.ExitCode)" }
+          sc.exe query MyTiziHelper
+          sc.exe qc MyTiziHelper
+          Get-ChildItem "$env:ProgramFiles\MyTizi" -Recurse | Select-Object FullName, Length
+      - name: 端到端测试
+        env:
+          MYTIZI_EXPECT_VERSION: ${{ needs.build.outputs.version }}
+        run: go test -tags e2e -count=1 -v -timeout 20m ./e2e/
+      - name: 界面冒烟测试（截图）
+        if: always()
+        run: ./e2e/gui-smoke.ps1 -OutDir "$env:RUNNER_TEMP\screens"
+      - name: 收集日志
+        if: always()
+        run: |
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\logs" | Out-Null
+          Copy-Item "$env:ProgramData\MyTizi\logs\*" "$env:RUNNER_TEMP\logs\" -ErrorAction SilentlyContinue
+          Copy-Item "$env:LOCALAPPDATA\MyTizi\Logs\*" "$env:RUNNER_TEMP\logs\" -ErrorAction SilentlyContinue
+          Copy-Item "$env:TEMP\mytizi-diagnose.md" "$env:RUNNER_TEMP\logs\" -ErrorAction SilentlyContinue
+          Get-Content "$env:ProgramData\MyTizi\logs\helper.log" -ErrorAction SilentlyContinue
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: e2e-${{ matrix.arch }}-screens-and-logs
+          path: |
+            ${{ runner.temp }}/screens
+            ${{ runner.temp }}/logs
+      - name: 卸载并确认清理干净
+        if: always()
+        run: |
+          & "$env:ProgramFiles\MyTizi\uninstall.exe" /S
+          $deadline = (Get-Date).AddSeconds(60)
+          while ((Test-Path "$env:ProgramFiles\MyTizi\mytizi-service.exe") -and (Get-Date) -lt $deadline) { Start-Sleep 1 }
+          Start-Sleep 3
+          $svc = Get-Service MyTiziHelper -ErrorAction SilentlyContinue
+          if ($svc) { throw "卸载后服务仍然存在：$($svc.Status)" }
+          if (Test-Path "$env:ProgramFiles\MyTizi\mytizi-service.exe") { throw "卸载后文件仍在" }
+          if (Test-Path "$env:ProgramData\MyTizi") { throw "卸载后 ProgramData\MyTizi 仍在" }
+          if (Get-NetIPAddress -IPAddress 198.18.0.1 -ErrorAction SilentlyContinue) { throw "卸载后 TUN 网卡仍在" }
+          Write-Host "卸载干净"
+
+  release:
+    name: 附加到 GitHub Release
+    if: github.ref_type == 'tag'
+    needs: [test, build, e2e]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: windows-installers
+          path: dist
+      - name: 上传
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/* --clobber --repo "$GITHUB_REPOSITORY"

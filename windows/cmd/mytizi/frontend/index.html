@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>MyTizi</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Wails 运行时：在 App 里加载后提供全局 wails；直接用浏览器打开本文件时加载失败，app.js 会改用预览数据。 -->
+  <script type="module" src="/wails/runtime.js"></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div id="app" aria-live="polite"></div>
+  <div id="toast" class="toast" role="status"></div>
+  <div id="menu-layer" class="menu-layer" hidden></div>
+  <div id="sheet-layer" class="sheet-layer" hidden></div>
+  <div id="confirm-layer" class="sheet-layer top" hidden></div>
+</body>
+</html>
