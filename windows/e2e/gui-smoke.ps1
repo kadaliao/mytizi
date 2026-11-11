@@ -92,4 +92,9 @@ if (Test-Path $log) { Get-Content $log -Tail 30 }
 $status = & sc.exe query MyTiziHelper
 Write-Host $status
 Stop-Process -Id $p.Id -Force
+# 关掉 App 不会断开连接（后台服务保持着）。先让服务断开，再停测试节点，
+# 否则后续步骤（上传 artifact）的流量会走进一个已经没有节点的代理。
+Restart-Service MyTiziHelper -Force
+Start-Sleep -Seconds 3
 Stop-Process -Id $node.Id -Force -ErrorAction SilentlyContinue
+if (Get-NetAdapter -Name MyTizi -ErrorAction SilentlyContinue | Where-Object Status -eq Up) { throw "重启服务后 MyTizi 网卡仍在" }
