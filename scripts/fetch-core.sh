@@ -31,12 +31,15 @@ if [ "${1:-}" = "--update-core" ]; then
 import json, sys
 d = json.load(sys.stdin)
 v = d["tag_name"]
-want = {"ARM64": "mihomo-darwin-arm64-%s.gz" % v, "AMD64": "mihomo-darwin-amd64-v1-%s.gz" % v}
+want = {"ARM64": "mihomo-darwin-arm64-%s.gz" % v, "AMD64": "mihomo-darwin-amd64-v1-%s.gz" % v,
+        "WINDOWS_AMD64": "mihomo-windows-amd64-v1-%s.zip" % v, "WINDOWS_ARM64": "mihomo-windows-arm64-%s.zip" % v}
 assets = {a["name"]: a for a in d["assets"]}
 print("# 内置核心的固定版本。sha256 是 GitHub 发布资产（.gz）的摘要，fetch-core.sh 下载后逐项校验。")
 print("# 升级核心：scripts/fetch-core.sh --update-core，然后重新跑测试再提交。")
 print("MIHOMO_VERSION=%s" % v)
 for k, name in want.items():
+    if k.startswith("WINDOWS_") and k == "WINDOWS_AMD64":
+        print("# Windows 版（windows/tools/fetchcore 读取）：amd64 用 v1 基线指令集，任何 x86-64 CPU 都能跑；mihomo 自带 Wintun 驱动。")
     digest = assets[name]["digest"].split(":", 1)[1]
     print("MIHOMO_%s_ASSET=%s" % (k, name))
     print("MIHOMO_%s_SHA256=%s" % (k, digest))

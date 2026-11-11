@@ -7,9 +7,22 @@ MyTizi 自身代码以 [MIT 许可证](LICENSE) 发布。打包后的 App 还附
 | mihomo（代理核心） | v1.19.32 | GPL-3.0（以该版本标签里的 LICENSE 为准） | <https://github.com/MetaCubeX/mihomo/tree/v1.19.32> |
 | meta-rules-dat（`geoip.metadb`、`geosite.dat`） | 构建当天最新 | GPL-3.0（GitHub 对该仓库 LICENSE 的识别结果） | <https://github.com/MetaCubeX/meta-rules-dat> |
 
+## Windows 版额外附带的组件
+
+| 组件 | 许可证 | 说明 |
+| --- | --- | --- |
+| Wintun（虚拟网卡驱动） | WireGuard LLC 的预编译二进制许可（允许原样分发） | 由 mihomo 的 Windows 版内嵌，MyTizi 不单独分发、不做修改。<https://www.wintun.net/> |
+| Wails v3 | MIT | 界面框架，编译进 `MyTizi.exe`。<https://github.com/wailsapp/wails> |
+| go-winio | MIT | 命名管道，编译进两个 exe。<https://github.com/microsoft/go-winio> |
+| go-ole | MIT | Wails 在 Windows 上使用的 COM 绑定。<https://github.com/go-ole/go-ole> |
+| golang.org/x/sys | BSD-3-Clause | Windows 系统调用。<https://go.googlesource.com/sys> |
+| Microsoft Edge WebView2 引导安装器 | 微软的再分发条款 | 仅在缺少 WebView2 运行时的机器上由安装程序调用。 |
+
+Windows 安装包里的许可证文本位于 `C:\Program Files\MyTizi\licenses\`。
+
 ## 关于 mihomo（GPL-3.0）
 
-- App 里的 mihomo 是上游官方发布的**未修改**二进制，构建时由 `scripts/fetch-core.sh` 按 `core.lock` 下载并校验 SHA-256。
+- App 里的 mihomo 是上游官方发布的**未修改**二进制，构建时由 `scripts/fetch-core.sh`（Windows 版：`windows/tools/fetchcore`）按 `core.lock` 下载并校验 SHA-256。
 - 完整的对应源码见上表链接（该版本标签）。许可证全文随 App 附带：`MyTizi.app/Contents/Resources/licenses/mihomo-LICENSE.txt`。
 - MyTizi 把 mihomo 当作**独立程序**启动，通过本机回环上的 HTTP 接口通信，并没有把它链接进自己的代码里，所以 MyTizi 自身可以使用 MIT 许可证。
 

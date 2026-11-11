@@ -3,3 +3,6 @@ Vendor/
 *.dmg
 .DS_Store
 /dist/
+/windows/dist/
+/windows/build/cache/
+*.syso
