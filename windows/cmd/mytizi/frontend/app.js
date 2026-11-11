@@ -719,7 +719,12 @@
     const theme = params.get('theme');
     if (theme === 'dark' || theme === 'light') document.documentElement.dataset.theme = theme;
 
-    const preview = location.protocol === 'file:' || !(await waitForRuntime(3000));
+    // 只有直接用浏览器打开文件时才用预览数据；在 App 里绝不能拿假数据冒充真实状态。
+    const preview = location.protocol === 'file:';
+    if (!preview && !(await waitForRuntime(15000))) {
+      $('#app').innerHTML = '<p style="padding:48px 28px;text-align:center;line-height:1.7">界面没能连上 MyTizi 主程序。<br>请从托盘退出 MyTizi 后重新打开。</p>';
+      return;
+    }
     if (preview) document.documentElement.classList.add('preview');
     const kind = params.get('state') || 'connected';
     backend = preview ? previewBackend(kind) : wailsBackend();
