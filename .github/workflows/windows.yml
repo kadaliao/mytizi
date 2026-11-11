@@ -151,7 +151,7 @@ jobs:
           if ($svc) { throw "卸载后服务仍然存在：$($svc.Status)" }
           if (Test-Path "$env:ProgramFiles\MyTizi\mytizi-service.exe") { throw "卸载后文件仍在" }
           if (Test-Path "$env:ProgramData\MyTizi") { throw "卸载后 ProgramData\MyTizi 仍在" }
-          if (Get-NetAdapter -Name MyTizi -ErrorAction SilentlyContinue) { throw "卸载后 MyTizi 网卡仍在" }
+          if (Get-NetIPAddress -IPAddress 198.18.0.1 -ErrorAction SilentlyContinue) { throw "卸载后 TUN 网卡仍在" }
           Write-Host "卸载干净"
 
   release:

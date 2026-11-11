@@ -242,6 +242,14 @@ func (s *Supervisor) Start(p ipc.StartParams) ipc.Response {
 			s.stopLocked()
 			return ipc.Failure("tun-missing", "没能创建虚拟网卡（TUN）。", tail)
 		}
+		// Wintun 第一次创建网卡时，地址会先于路由、DNS 与 WFP 规则出现（ARM 机器上尤其明显），
+		// 网卡名也可能还没改过来。等核心报告 TUN 就绪（最多 5 秒），再读一次网卡名。
+		if !s.waitLaunchLog(tunReadyLog, gen, 5*time.Second) {
+			s.opt.Log.Line("核心没有报告 TUN 就绪，按网卡已出现处理")
+		}
+		if name := InterfaceWithIPv4(appinfo.TunGateway); name != "" {
+			tun = name
+		}
 	}
 
 	now := time.Now()
@@ -479,6 +487,21 @@ func (s *Supervisor) waitController(port int, secret string, gen int, timeout ti
 	return false, false
 }
 
+// waitLaunchLog 等本次启动的核心日志里出现某一行。
+func (s *Supervisor) waitLaunchLog(needle string, gen int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !s.isCurrent(gen) {
+			return false
+		}
+		if s.currentLaunchLogContains(needle) {
+			return true
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return false
+}
+
 // currentLaunchLogContains 只看本次启动之后的核心日志。
 func (s *Supervisor) currentLaunchLogContains(needle string) bool {
 	tail := s.opt.CoreLog.Tail(60)
@@ -606,7 +629,11 @@ func validate(p ipc.StartParams) (config.Options, error) {
 	return o, nil
 }
 
-const launchMarker = "---- 启动核心 ----"
+const (
+	launchMarker = "---- 启动核心 ----"
+	// tunReadyLog 是 mihomo 在 TUN 全部设置完（地址、路由、DNS、strict-route）之后打的日志。
+	tunReadyLog = "Tun adapter listening at"
+)
 
 func randomHex(n int) string {
 	b := make([]byte, n)

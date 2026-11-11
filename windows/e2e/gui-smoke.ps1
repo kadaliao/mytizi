@@ -97,4 +97,4 @@ Stop-Process -Id $p.Id -Force
 Restart-Service MyTiziHelper -Force
 Start-Sleep -Seconds 3
 Stop-Process -Id $node.Id -Force -ErrorAction SilentlyContinue
-if (Get-NetAdapter -Name MyTizi -ErrorAction SilentlyContinue | Where-Object Status -eq Up) { throw "重启服务后 MyTizi 网卡仍在" }
+if (Get-NetIPAddress -IPAddress 198.18.0.1 -ErrorAction SilentlyContinue) { throw "重启服务后 TUN 网卡仍在" }
