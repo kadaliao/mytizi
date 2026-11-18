@@ -102,7 +102,11 @@ final class RuleCatalogTests: XCTestCase {
             XCTAssertTrue(direct.contains(domain), "缺少直连域名 \(domain)")
         }
         let proxy = Set(RuleCatalog.proxyDomains)
-        for domain in ["googlevideo.com", "googleusercontent.com", "ytimg.com", "claude.ai", "anthropic.com", "claudeusercontent.com", "twimg.com"] {
+        for domain in [
+            "googlevideo.com", "googleusercontent.com", "ytimg.com", "twimg.com",
+            "claude.ai", "claude.com", "anthropic.com", "claudeusercontent.com",
+            "clau.de", "claudemcpclient.com", "claudemcpcontent.com", "claude.app", "anthropic.auth0.com",
+        ] {
             XCTAssertTrue(proxy.contains(domain), "缺少代理域名 \(domain)")
         }
     }
@@ -157,6 +161,9 @@ final class ConfigBuilderTests: XCTestCase {
     func testTunDNSAndGeoDefaults() {
         let text = ConfigBuilder.build(options()).render()
         XCTAssertTrue(text.contains("enhanced-mode: \"fake-ip\""))
+        for suffix in ["+.apple.com", "+.cdn-apple.com"] {
+            XCTAssertTrue(RuleCatalog.fakeIPFilter.contains(suffix), "Apple 域名需要真实 IP：\(suffix)")
+        }
         XCTAssertTrue(text.contains("\"any:53\"") && text.contains("\"tcp://any:53\""))
         XCTAssertTrue(text.contains("geo-auto-update: false"), "内置数据库，不允许核心联网更新")
         XCTAssertTrue(text.contains("auto-detect-interface: true"))

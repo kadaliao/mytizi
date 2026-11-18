@@ -97,6 +97,7 @@ var ProxyGroups = []Group{
 	}},
 	{"Claude / OpenAI", []string{
 		"claude.ai", "claude.com", "anthropic.com", "claudeusercontent.com",
+		"clau.de", "claudemcpclient.com", "claudemcpcontent.com", "claude.app", "anthropic.auth0.com",
 		"openai.com", "chatgpt.com", "oaistatic.com", "oaiusercontent.com",
 	}},
 	{"开发 / 社交 / 资讯", []string{
@@ -123,7 +124,8 @@ var FakeIPFilter = []string{
 	"*.lan", "*.local", "*.localdomain", "*.home.arpa", "localhost.ptlogin2.qq.com",
 	"time.*.com", "time.*.gov", "time.*.edu.cn", "ntp.*.com", "*.ntp.org.cn", "+.pool.ntp.org",
 	"stun.*.*", "stun.*.*.*", "+.stun.*.*", "+.stun.*.*.*",
-	"+.msftconnecttest.com", "+.msftncsi.com", "captive.apple.com", "+.captive.apple.com",
+	"+.msftconnecttest.com", "+.msftncsi.com",
+	"+.apple.com", "+.cdn-apple.com",
 	"+.srv.nintendo.net", "+.stun.playstation.net", "xbox.*.microsoft.com", "+.xboxlive.com",
 	// Tailscale 把自己的 socket 绑在物理网卡上，拿到 fake-ip 会直接发给网关然后黑洞。
 	"+.tailscale.com", "+.tailscale.io", "+.ts.net",

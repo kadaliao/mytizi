@@ -101,6 +101,7 @@ public enum RuleCatalog {
         ]),
         Group(name: "Claude / OpenAI", domains: [
             "claude.ai", "claude.com", "anthropic.com", "claudeusercontent.com",
+            "clau.de", "claudemcpclient.com", "claudemcpcontent.com", "claude.app", "anthropic.auth0.com",
             "openai.com", "chatgpt.com", "oaistatic.com", "oaiusercontent.com",
         ]),
         Group(name: "开发 / 社交 / 资讯", domains: [
@@ -133,7 +134,8 @@ public enum RuleCatalog {
         "*.lan", "*.local", "*.localdomain", "*.home.arpa", "localhost.ptlogin2.qq.com",
         "time.*.com", "time.*.gov", "time.*.edu.cn", "ntp.*.com", "*.ntp.org.cn", "+.pool.ntp.org",
         "stun.*.*", "stun.*.*.*", "+.stun.*.*", "+.stun.*.*.*",
-        "+.msftconnecttest.com", "+.msftncsi.com", "captive.apple.com", "+.captive.apple.com",
+        "+.msftconnecttest.com", "+.msftncsi.com",
+        "+.apple.com", "+.cdn-apple.com",
         "+.srv.nintendo.net", "+.stun.playstation.net", "xbox.*.microsoft.com", "+.xboxlive.com",
         // Tailscale 把自己的 socket 绑在物理网卡上（IP_BOUND_IF），拿到 fake-ip 会直接发给网关然后黑洞，
         // 登录、DERP 中继和重连都会变慢。给真实地址，它从物理网卡直连即可。
